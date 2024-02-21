@@ -1,6 +1,6 @@
+pub mod config;
 pub mod database;
 pub mod routes;
-pub mod secrets;
 
 #[macro_use]
 extern crate rocket;
@@ -13,7 +13,8 @@ use rocket::{
 
 pub struct ServerState {
     db: database::Database,
-    secrets: secrets::Secrets,
+    config: config::Config,
+    secrets: config::Secrets,
 }
 
 #[get("/")]
@@ -23,13 +24,15 @@ fn index() -> Result<Json<String>, Status> {
 
 #[launch]
 fn rocket() -> _ {
-    let keys = secrets::read_secrets();
+    let config = config::read_config();
+    let keys = config::read_secrets();
 
-    let db = database::connect_to_db();
+    let db = database::connect_to_db(&config);
     db.print_info();
 
     let state = ServerState {
         db: db,
+        config: config,
         secrets: keys,
     };
 

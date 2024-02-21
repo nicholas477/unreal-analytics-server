@@ -4,9 +4,11 @@ use mongodb::{options::ClientOptions, Client};
 use rocket::serde::json::{Json, Value};
 use std::collections::HashMap;
 
+use crate::config;
+
 pub struct Database {
-    client: mongodb::Client,
-    database: mongodb::Database,
+    pub client: mongodb::Client,
+    pub database: mongodb::Database,
 }
 
 impl Database {
@@ -34,31 +36,10 @@ impl Database {
     }
 }
 
-pub fn connect_to_db() -> Database {
-    let client_options = ClientOptions::parse("mongodb://localhost:27017").unwrap();
+pub fn connect_to_db(config: &config::Config) -> Database {
+    let client_options = ClientOptions::parse(&config.mongodb_connection_string).unwrap();
     let client = Client::with_options(client_options).unwrap();
     let db = client.database("local");
-
-    // println!("Printing database names...");
-    // let db_names = block_on(client.list_database_names(None, None));
-    // for db_name in db_names.unwrap() {
-    //     println!("{}", db_name);
-    // }
-
-    // println!("Printing collection names in {}", db.name());
-    // for collection_name in block_on(db.list_collection_names(None)).unwrap() {
-    //     println!("{}", collection_name);
-    // }
-
-    //let col = db.collection("sessions");
-    // client_options.app_name = Some("unreal-analytics-server".to_string());
-    // let client = Client::with_options(client_options).unwrap();
-
-    // println!("Printing database names!");
-    // // List the names of the databases in that deployment.
-    // for db_name in client.list_database_names(None, None).await.unwrap() {
-    //     println!("{}", db_name);
-    // }
 
     Database {
         client: client,
