@@ -1,5 +1,6 @@
 use futures::executor::block_on;
 use mongodb::bson::{doc, to_bson, Document};
+use mongodb::results::InsertOneResult;
 use mongodb::{options::ClientOptions, Client};
 use rocket::serde::json::{Json, Value};
 use std::collections::HashMap;
@@ -25,14 +26,14 @@ impl Database {
         }
     }
 
-    pub fn add_session(&self, session: &Value) {
+    pub async fn add_session(&self, session: &Value) -> mongodb::error::Result<InsertOneResult> {
         let collection = self.database.collection::<Document>("sessions");
 
         let document = mongodb::bson::to_bson(session).unwrap();
         let document2 = mongodb::bson::to_document(&document).unwrap();
         println!("Document: {:#?}", document2);
 
-        block_on(collection.insert_one(document2, None)).unwrap();
+        collection.insert_one(document2, None).await
     }
 }
 

@@ -105,16 +105,14 @@ async fn send_discord_session_info(
 
     let session_duration = session_duration_to_string(&(end_time - start_time));
 
-    let mut content_str = String::new();
-
-    if is_steam_session {
-        content_str = format!(
-            "http://steamcommunity.com/profiles/{} played a game for {}",
+    let content_str = if is_steam_session {
+        format!(
+            "https://steamcommunity.com/profiles/{} played a game for {}",
             net_id, session_duration
-        );
+        )
     } else {
-        content_str = format!("{} played a game for {}", net_id, session_duration);
-    }
+        format!("{} played a game for {}", net_id, session_duration)
+    };
 
     let webhook = Webhook::from_url(&http, &url).await?;
     let file = CreateAttachment::bytes(session_str, "AnalyticsSession.json");
@@ -140,16 +138,27 @@ pub async fn upload_session(
         insert_ip_into_session_collector(&addr, &session).map_err(|_| Status { code: 400 })?;
 
     // Throw it into the database
-    state.db.add_session(&modified_session);
+    let db_res = state.db.add_session(&modified_session).await;
 
-    // Spawn the discord task async so that we don't have to wait before returning a http response
-    let url = state.secrets.keys.discord_webhook.to_string();
-    task::spawn(async move {
-        send_discord_session_info(&url, modified_session)
-            .await
-            .unwrap_or(());
-    });
+    match db_res {
+        Ok(_) => {
+            // Spawn the discord task async so that we don't have to wait before returning a http response
+            let url = state.secrets.keys.discord_webhook.to_string();
+            task::spawn(async move {
+                send_discord_session_info(&url, modified_session)
+                    .await
+                    .unwrap_or(());
+            });
 
-    println!("Returning result");
-    Ok("".to_string())
+            Ok("".to_string())
+        }
+        Err(e) => {
+            eprintln!(
+                "Failed to insert session into database! Error: {}",
+                e.to_string()
+            );
+
+            Err(Status { code: 500 })
+        }
+    }
 }
