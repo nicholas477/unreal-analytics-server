@@ -1,12 +1,10 @@
-use chrono::format::ParseError;
-use chrono::{DateTime, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, TimeDelta};
+
+use chrono::{NaiveDateTime, TimeDelta};
 use serenity::builder::ExecuteWebhook;
 use serenity::{builder::CreateAttachment, http::Http, model::webhook::Webhook};
 
 use rocket::{
-    get,
     http::Status,
-    request::Request,
     serde::json::serde_json,
     serde::json::{Json, Value},
     State,
@@ -19,7 +17,7 @@ fn get_end_time(session: &Json<Value>) -> Option<NaiveDateTime> {
         .get("EndTime")?
         .as_str()?;
 
-    NaiveDateTime::parse_from_str(&start_time_str, "%Y.%m.%d-%H.%M.%S").ok()
+    NaiveDateTime::parse_from_str(start_time_str, "%Y.%m.%d-%H.%M.%S").ok()
 }
 
 fn get_start_time(session: &Json<Value>) -> Option<NaiveDateTime> {
@@ -29,7 +27,7 @@ fn get_start_time(session: &Json<Value>) -> Option<NaiveDateTime> {
         .get("StartTime")?
         .as_str()?;
 
-    NaiveDateTime::parse_from_str(&start_time_str, "%Y.%m.%d-%H.%M.%S").ok()
+    NaiveDateTime::parse_from_str(start_time_str, "%Y.%m.%d-%H.%M.%S").ok()
 }
 
 fn is_steam_session(session: &Json<Value>) -> Option<bool> {
@@ -38,8 +36,7 @@ fn is_steam_session(session: &Json<Value>) -> Option<bool> {
             .as_object()?
             .get("BP_SessionAnalyicsCollector_C")?
             .get("PlayerControllerData")?
-            .as_array()?
-            .get(0)?
+            .as_array()?.first()?
             .get("SteamAnalyticsData")
             .is_some(),
     )
@@ -51,8 +48,7 @@ fn get_net_id(session: &Json<Value>) -> Option<&str> {
         .as_object()?
         .get("BP_SessionAnalyicsCollector_C")?
         .get("PlayerControllerData")?
-        .as_array()?
-        .get(0)?
+        .as_array()?.first()?
         .get("NetID")?
         .as_str()
 }
@@ -90,7 +86,7 @@ fn session_duration_to_string(session_duration: &TimeDelta) -> String {
 
 async fn send_discord_session_info(
     url: &String,
-    mut session: Json<Value>,
+    session: Json<Value>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let http = Http::new("");
 
@@ -114,7 +110,7 @@ async fn send_discord_session_info(
         format!("{} played a game for {}", net_id, session_duration)
     };
 
-    let webhook = Webhook::from_url(&http, &url).await?;
+    let webhook = Webhook::from_url(&http, url).await?;
     let file = CreateAttachment::bytes(session_str, "AnalyticsSession.json");
     let builder = ExecuteWebhook::new().content(content_str).add_file(file);
 

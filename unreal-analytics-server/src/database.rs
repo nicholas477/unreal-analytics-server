@@ -1,9 +1,9 @@
 use futures::executor::block_on;
-use mongodb::bson::{doc, to_bson, Document};
+use mongodb::bson::{Document};
 use mongodb::results::InsertOneResult;
 use mongodb::{options::ClientOptions, Client};
-use rocket::serde::json::{Json, Value};
-use std::collections::HashMap;
+use rocket::serde::json::{Value};
+
 
 use crate::config;
 
@@ -43,7 +43,7 @@ pub fn connect_to_db(config: &config::Config) -> Database {
     let db = client.database("local");
 
     Database {
-        client: client,
+        client,
         database: db,
     }
 }

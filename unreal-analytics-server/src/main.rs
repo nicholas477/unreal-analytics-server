@@ -7,8 +7,7 @@ extern crate rocket;
 use rocket::{
     get,
     http::Status,
-    serde::json::{Json, Value},
-    State,
+    serde::json::{Json},
 };
 
 pub struct ServerState {
@@ -31,8 +30,8 @@ fn rocket() -> _ {
     db.print_info();
 
     let state = ServerState {
-        db: db,
-        config: config,
+        db,
+        config,
         secrets: keys,
     };
 
