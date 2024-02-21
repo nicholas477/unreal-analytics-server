@@ -1,4 +1,3 @@
-
 use chrono::{NaiveDateTime, TimeDelta};
 use serenity::builder::ExecuteWebhook;
 use serenity::{builder::CreateAttachment, http::Http, model::webhook::Webhook};
@@ -30,13 +29,30 @@ fn get_start_time(session: &Json<Value>) -> Option<NaiveDateTime> {
     NaiveDateTime::parse_from_str(start_time_str, "%Y.%m.%d-%H.%M.%S").ok()
 }
 
+fn get_feedback_comments(session: &Json<Value>) -> Option<Vec<&str>> {
+    let feedback_array: &Vec<Value> = session
+        .as_object()?
+        .get("BP_CactusGameFeedbackCollector_C")?
+        .get("FeedbackComments")?
+        .as_array()?;
+
+    Some(
+        feedback_array
+            .iter()
+            .map(|val| val.as_str())
+            .flatten()
+            .collect::<Vec<&str>>(),
+    )
+}
+
 fn is_steam_session(session: &Json<Value>) -> Option<bool> {
     Some(
         session
             .as_object()?
             .get("BP_SessionAnalyicsCollector_C")?
             .get("PlayerControllerData")?
-            .as_array()?.first()?
+            .as_array()?
+            .first()?
             .get("SteamAnalyticsData")
             .is_some(),
     )
@@ -48,7 +64,8 @@ fn get_net_id(session: &Json<Value>) -> Option<&str> {
         .as_object()?
         .get("BP_SessionAnalyicsCollector_C")?
         .get("PlayerControllerData")?
-        .as_array()?.first()?
+        .as_array()?
+        .first()?
         .get("NetID")?
         .as_str()
 }
@@ -77,11 +94,46 @@ fn insert_ip_into_session_collector(
 
 fn session_duration_to_string(session_duration: &TimeDelta) -> String {
     format!(
-        "{:0>2}:{:0>2}:{:0>2}",
-        session_duration.num_hours() % 24,
+        "{}:{:0>2}:{:0>2}",
+        session_duration.num_hours(),
         session_duration.num_minutes() % 60,
         session_duration.num_seconds() % 60
     )
+}
+
+// Looks at the session data and picks out NetID, StartTime, EndTime, and feedback comments for the discord message
+fn build_content_string(session: &Json<Value>) -> Result<String, Box<dyn std::error::Error>> {
+    // Look into the json and pick out some interesting data
+    let net_id = get_net_id(&session).ok_or("Unable to find Net ID in session data")?;
+    let is_steam_session =
+        is_steam_session(&session).ok_or("Unable to find SteamAnalyticsData in session data")?;
+
+    let comments = get_feedback_comments(&session).unwrap_or(Vec::new());
+
+    let start_time = get_start_time(&session).ok_or("Unable to find StartTime in session data")?;
+    let end_time = get_end_time(&session).ok_or("Unable to find EndTime in session data")?;
+
+    let session_duration = session_duration_to_string(&(end_time - start_time));
+
+    // If it's a steam session, put their steam page in the message
+    let mut content_str = if is_steam_session {
+        format!(
+            "https://steamcommunity.com/profiles/{} played a game for {}",
+            net_id, session_duration
+        )
+    } else {
+        format!("{} played a game for {}", net_id, session_duration)
+    };
+
+    // If they added comments, put that in the message
+    if comments.len() > 0 {
+        content_str += "\nFeedback comments:";
+        for comment in comments {
+            content_str += &format!("\n`{}`", comment);
+        }
+    }
+
+    Ok(content_str)
 }
 
 async fn send_discord_session_info(
@@ -90,25 +142,8 @@ async fn send_discord_session_info(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let http = Http::new("");
 
-    // Look into the json and pick out some interesting data
-    let net_id = get_net_id(&session).ok_or("Unable to find Net ID in session data")?;
-    let is_steam_session =
-        is_steam_session(&session).ok_or("Unable to find SteamAnalyticsData in session data")?;
-
-    let start_time = get_start_time(&session).ok_or("Unable to find StartTime in session data")?;
-    let end_time = get_end_time(&session).ok_or("Unable to find EndTime in session data")?;
+    let content_str = build_content_string(&session)?;
     let session_str = serde_json::ser::to_string_pretty(session.as_object().unwrap())?;
-
-    let session_duration = session_duration_to_string(&(end_time - start_time));
-
-    let content_str = if is_steam_session {
-        format!(
-            "https://steamcommunity.com/profiles/{} played a game for {}",
-            net_id, session_duration
-        )
-    } else {
-        format!("{} played a game for {}", net_id, session_duration)
-    };
 
     let webhook = Webhook::from_url(&http, url).await?;
     let file = CreateAttachment::bytes(session_str, "AnalyticsSession.json");
@@ -123,8 +158,11 @@ async fn send_discord_session_info(
 
 use tokio::task;
 
+use crate::auth::ApiKey;
+
 #[post("/", data = "<session>")]
 pub async fn upload_session(
+    _key: ApiKey,
     addr: std::net::SocketAddr,
     state: &State<crate::ServerState>,
     session: Json<Value>,

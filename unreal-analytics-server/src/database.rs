@@ -1,12 +1,12 @@
 use futures::executor::block_on;
-use mongodb::bson::{Document};
+use mongodb::bson::Document;
 use mongodb::results::InsertOneResult;
 use mongodb::{options::ClientOptions, Client};
-use rocket::serde::json::{Value};
-
+use rocket::serde::json::Value;
 
 use crate::config;
 
+#[derive(Debug)]
 pub struct Database {
     pub client: mongodb::Client,
     pub database: mongodb::Database,
@@ -28,12 +28,9 @@ impl Database {
 
     pub async fn add_session(&self, session: &Value) -> mongodb::error::Result<InsertOneResult> {
         let collection = self.database.collection::<Document>("sessions");
+        let document = mongodb::bson::to_document(&mongodb::bson::to_bson(session)?)?;
 
-        let document = mongodb::bson::to_bson(session).unwrap();
-        let document2 = mongodb::bson::to_document(&document).unwrap();
-        println!("Document: {:#?}", document2);
-
-        collection.insert_one(document2, None).await
+        collection.insert_one(document, None).await
     }
 }
 

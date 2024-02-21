@@ -23,13 +23,10 @@ pub struct Keys {
 pub fn read_config() -> Config {
     let filename = "config/App.toml";
 
-    let contents = match fs::read_to_string(filename) {
-        Ok(c) => c,
-        Err(_) => {
-            eprintln!("Could not read config file `{}`", filename);
-            exit(1);
-        }
-    };
+    let contents = fs::read_to_string(filename).unwrap_or_else(|_err| {
+        eprintln!("Could not read config file! {}", filename);
+        exit(1);
+    });
 
     match toml::from_str(&contents) {
         Ok(d) => d,
@@ -43,13 +40,10 @@ pub fn read_config() -> Config {
 pub fn read_secrets() -> Secrets {
     let filename = "config/Secrets.toml";
 
-    let contents = match fs::read_to_string(filename) {
-        Ok(c) => c,
-        Err(_) => {
-            eprintln!("Could not read secrets file `{}`", filename);
-            exit(1);
-        }
-    };
+    let contents = fs::read_to_string(filename).unwrap_or_else(|_err| {
+        eprintln!("Could not read secrets file! {}", filename);
+        exit(1);
+    });
 
     match toml::from_str(&contents) {
         Ok(d) => d,

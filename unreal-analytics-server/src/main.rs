@@ -1,15 +1,13 @@
+pub mod auth;
 pub mod config;
 pub mod database;
 pub mod routes;
 
 #[macro_use]
 extern crate rocket;
-use rocket::{
-    get,
-    http::Status,
-    serde::json::{Json},
-};
+use rocket::{get, http::Status, serde::json::Json};
 
+#[derive(Debug)]
 pub struct ServerState {
     pub db: database::Database,
     pub config: config::Config,
