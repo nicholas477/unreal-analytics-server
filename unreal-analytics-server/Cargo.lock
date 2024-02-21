@@ -3088,6 +3088,7 @@ dependencies = [
  "rocket",
  "serde",
  "serenity",
+ "tokio",
  "toml",
 ]
 

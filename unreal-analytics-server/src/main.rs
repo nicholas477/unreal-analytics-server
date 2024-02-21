@@ -12,9 +12,9 @@ use rocket::{
 };
 
 pub struct ServerState {
-    db: database::Database,
-    config: config::Config,
-    secrets: config::Secrets,
+    pub db: database::Database,
+    pub config: config::Config,
+    pub secrets: config::Secrets,
 }
 
 #[get("/")]

@@ -11,6 +11,7 @@ rocket = { version = "0.5.0", features = ["json"] }
 toml = "0.8.10"
 futures = "0.3"
 serenity = "0.12"
+tokio = "1.36.0"
 
 [dependencies.mongodb]
 version = "2.8.0"
