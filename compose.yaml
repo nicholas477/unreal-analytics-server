@@ -1,0 +1,20 @@
+services:
+  backend:
+    hostname: backend
+    build:
+      context: unreal-analytics-server
+    stop_signal: SIGINT
+    environment:
+      - ROCKET_ADDRESS=0.0.0.0
+      - ROCKET_PORT=9953
+    volumes:
+      - ./unreal-analytics-server/www:/www
+    ports:
+      - 9953:9953
+    depends_on:
+      - mongo
+
+  mongo:
+    image: mongo
+    ports:
+      - 27017:27017
