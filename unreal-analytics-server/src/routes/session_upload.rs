@@ -1,3 +1,4 @@
+use crate::utils;
 use chrono::{NaiveDateTime, TimeDelta};
 use serenity::builder::ExecuteWebhook;
 use serenity::{builder::CreateAttachment, http::Http, model::webhook::Webhook};
@@ -72,7 +73,7 @@ fn get_net_id(session: &Json<Value>) -> Option<&str> {
 
 // Inserts the IP into the BP_SessionAnalyicsCollector_C object
 fn insert_ip_into_session_collector(
-    addr: &std::net::SocketAddr,
+    addr: &utils::CloudflareIP,
     session: &Json<Value>,
 ) -> Result<Json<Value>, Box<dyn std::error::Error>> {
     let mut res = session.clone();
@@ -87,7 +88,7 @@ fn insert_ip_into_session_collector(
         .as_object_mut()
         .ok_or("Failed to convert BP_SessionAnalyicsCollector_C to json object")?;
 
-    session_collector_obj.insert("ip".to_string(), Value::String(addr.ip().to_string()));
+    session_collector_obj.insert("ip".to_string(), Value::String(addr.0.clone()));
 
     Ok(res)
 }
@@ -163,7 +164,7 @@ use crate::auth::ApiKey;
 #[post("/", data = "<session>")]
 pub async fn upload_session(
     _key: ApiKey,
-    addr: std::net::SocketAddr,
+    addr: utils::CloudflareIP,
     state: &State<crate::ServerState>,
     session: Json<Value>,
 ) -> Result<String, Status> {

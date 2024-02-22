@@ -1,5 +1,5 @@
 use rocket::http::Status;
-use rocket::outcome::IntoOutcome;
+
 use rocket::request::Outcome;
 use rocket::request::{self, FromRequest, Request};
 use rocket::State;
