@@ -1,1 +1,5 @@
 mongodb_connection_string = "mongodb://10.0.1.9:27017"
+
+[discord_config]
+send_messages = true
+notify_editor_sessions = true

@@ -13,8 +13,10 @@ services:
       - 9953:9953
     depends_on:
       - mongo
+    restart: always
 
   mongo:
     image: mongo
     ports:
       - 27017:27017
+    restart: always

@@ -4,6 +4,8 @@ pub mod config;
 pub mod database;
 pub mod routes;
 
+use std::sync::RwLock;
+
 #[macro_use]
 extern crate rocket;
 use rocket::{get, http::Status, serde::json::Json};
@@ -11,7 +13,8 @@ use rocket::{get, http::Status, serde::json::Json};
 #[derive(Debug)]
 pub struct ServerState {
     pub db: database::Database,
-    pub config: config::Config,
+    pub default_config: config::Config,
+    pub config: RwLock<config::Config>, // Config can be changed later
     pub secrets: config::Secrets,
 }
 
@@ -31,7 +34,8 @@ fn rocket() -> _ {
 
     let state = ServerState {
         db,
-        config,
+        default_config: config.clone(),
+        config: RwLock::new(config),
         secrets: keys,
     };
 

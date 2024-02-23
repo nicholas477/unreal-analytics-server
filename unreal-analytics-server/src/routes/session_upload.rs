@@ -59,6 +59,14 @@ fn is_steam_session(session: &Json<Value>) -> Option<bool> {
     )
 }
 
+fn is_editor_session(session: &Json<Value>) -> Option<bool> {
+    session
+        .as_object()?
+        .get("BP_SessionAnalyicsCollector_C")?
+        .get("IsPlayInEditorSession")?
+        .as_bool()
+}
+
 // Returns the NetID from inside PlayerControllerData
 fn get_net_id(session: &Json<Value>) -> Option<&str> {
     session
@@ -150,16 +158,22 @@ fn build_content_string(session: &Json<Value>) -> Result<String, Box<dyn std::er
         get_country_data(&session).ok_or("Unable to find country data")?;
     let country_string = format!("({}/{})", country_code, country_name);
 
+    let game_name_type_string = if is_editor_session(&session).unwrap_or(false) {
+        "PIE game"
+    } else {
+        "game"
+    };
+
     // If it's a steam session, put their steam page in the message
     let mut content_str = if is_steam_session {
         format!(
-            "https://steamcommunity.com/profiles/{}\n{}\nPlayed a game for {}",
-            net_id, country_string, session_duration
+            "https://steamcommunity.com/profiles/{}\n{}\nPlayed a {} for {}",
+            net_id, country_string, game_name_type_string, session_duration
         )
     } else {
         format!(
-            "{}\n{}\nPlayed a game for {}",
-            net_id, country_string, session_duration
+            "{}\n{}\nPlayed a {} for {}",
+            net_id, country_string, game_name_type_string, session_duration
         )
     };
 
@@ -194,9 +208,34 @@ async fn send_discord_session_info(
     Ok(())
 }
 
-use tokio::task;
-
 use crate::auth::ApiKey;
+
+pub fn try_spawn_discord_message_task(session: Json<Value>, state: &State<crate::ServerState>) {
+    let lock = match state.config.read() {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!(
+                "Failed to acquire server state lock! Err: {}",
+                e.to_string()
+            );
+            return;
+        }
+    };
+
+    if !lock.discord_config.send_messages {
+        return;
+    }
+
+    // Don't send editor session messages if it's an editor sesh
+    if is_editor_session(&session).unwrap_or(false) && !lock.discord_config.notify_editor_sessions {
+        return;
+    }
+
+    let url = state.secrets.keys.discord_webhook.to_string();
+    tokio::task::spawn(async move {
+        send_discord_session_info(&url, session).await.unwrap_or(());
+    });
+}
 
 #[post("/", data = "<session>")]
 pub async fn upload_session(
@@ -216,12 +255,7 @@ pub async fn upload_session(
     match db_res {
         Ok(_) => {
             // Spawn the discord task async so that we don't have to wait before returning a http response
-            let url = state.secrets.keys.discord_webhook.to_string();
-            task::spawn(async move {
-                send_discord_session_info(&url, modified_session)
-                    .await
-                    .unwrap_or(());
-            });
+            try_spawn_discord_message_task(modified_session, state);
 
             Ok("".to_string())
         }

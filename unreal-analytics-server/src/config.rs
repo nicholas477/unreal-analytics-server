@@ -2,17 +2,24 @@ use serde::Deserialize;
 use std::fs;
 use std::process::exit;
 
-#[derive(Deserialize, Debug)]
-pub struct Config {
-    pub mongodb_connection_string: String,
+#[derive(Deserialize, Debug, Clone)]
+pub struct DiscordConfig {
+    pub send_messages: bool,
+    pub notify_editor_sessions: bool,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
+pub struct Config {
+    pub mongodb_connection_string: String,
+    pub discord_config: DiscordConfig,
+}
+
+#[derive(Deserialize, Debug, Clone)]
 pub struct Secrets {
     pub keys: Keys,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct Keys {
     pub todolist_auth_key: String,
     pub cactus_auth_key: String,
@@ -30,8 +37,9 @@ pub fn read_config() -> Config {
 
     match toml::from_str(&contents) {
         Ok(d) => d,
-        Err(_) => {
+        Err(e) => {
             eprintln!("Unable to load data from `{}`", filename);
+            eprintln!("Error: {}", e.to_string());
             exit(1);
         }
     }
@@ -47,8 +55,9 @@ pub fn read_secrets() -> Secrets {
 
     match toml::from_str(&contents) {
         Ok(d) => d,
-        Err(_) => {
+        Err(e) => {
             eprintln!("Unable to load data from `{}`", filename);
+            eprintln!("Error: {}", e.to_string());
             exit(1);
         }
     }
