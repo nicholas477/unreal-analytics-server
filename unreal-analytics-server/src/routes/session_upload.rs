@@ -1,4 +1,4 @@
-use crate::utils;
+use crate::cloudflare;
 use chrono::{NaiveDateTime, TimeDelta};
 use serenity::builder::ExecuteWebhook;
 use serenity::{builder::CreateAttachment, http::Http, model::webhook::Webhook};
@@ -71,9 +71,26 @@ fn get_net_id(session: &Json<Value>) -> Option<&str> {
         .as_str()
 }
 
+// Returns the country code and name
+fn get_country_data(session: &Json<Value>) -> Option<(&str, &str)> {
+    let country_code = session
+        .as_object()?
+        .get("BP_SessionAnalyicsCollector_C")?
+        .get("CountryCode")?
+        .as_str()?;
+
+    let country = session
+        .as_object()?
+        .get("BP_SessionAnalyicsCollector_C")?
+        .get("CountryName")?
+        .as_str()?;
+
+    Some((country_code, country))
+}
+
 // Inserts the IP into the BP_SessionAnalyicsCollector_C object
-fn insert_ip_into_session_collector(
-    addr: &utils::CloudflareIP,
+fn insert_cloudflare_info_into_session_collector(
+    cloudflare_info: &cloudflare::CloudflareInfo,
     session: &Json<Value>,
 ) -> Result<Json<Value>, Box<dyn std::error::Error>> {
     let mut res = session.clone();
@@ -88,7 +105,20 @@ fn insert_ip_into_session_collector(
         .as_object_mut()
         .ok_or("Failed to convert BP_SessionAnalyicsCollector_C to json object")?;
 
-    session_collector_obj.insert("ip".to_string(), Value::String(addr.0.clone()));
+    session_collector_obj.insert(
+        "ip".to_string(),
+        Value::String(cloudflare_info.ip.to_string()),
+    );
+
+    session_collector_obj.insert(
+        "CountryCode".to_string(),
+        Value::String(cloudflare_info.country.clone()),
+    );
+
+    session_collector_obj.insert(
+        "CountryName".to_string(),
+        Value::String(cloudflare_info.get_country_name().to_string()),
+    );
 
     Ok(res)
 }
@@ -116,19 +146,26 @@ fn build_content_string(session: &Json<Value>) -> Result<String, Box<dyn std::er
 
     let session_duration = session_duration_to_string(&(end_time - start_time));
 
+    let (country_code, country_name) =
+        get_country_data(&session).ok_or("Unable to find country data")?;
+    let country_string = format!("({}/{})", country_code, country_name);
+
     // If it's a steam session, put their steam page in the message
     let mut content_str = if is_steam_session {
         format!(
-            "https://steamcommunity.com/profiles/{} played a game for {}",
-            net_id, session_duration
+            "https://steamcommunity.com/profiles/{}\n{}\nPlayed a game for {}",
+            net_id, country_string, session_duration
         )
     } else {
-        format!("{} played a game for {}", net_id, session_duration)
+        format!(
+            "{}\n{}\nPlayed a game for {}",
+            net_id, country_string, session_duration
+        )
     };
 
     // If they added comments, put that in the message
     if comments.len() > 0 {
-        content_str += "\nFeedback comments:";
+        content_str += "\n\nFeedback comments:";
         for comment in comments {
             content_str += &format!("\n`{}`", comment);
         }
@@ -164,13 +201,14 @@ use crate::auth::ApiKey;
 #[post("/", data = "<session>")]
 pub async fn upload_session(
     _key: ApiKey,
-    addr: utils::CloudflareIP,
+    cloudflare_info: cloudflare::CloudflareInfo,
     state: &State<crate::ServerState>,
     session: Json<Value>,
 ) -> Result<String, Status> {
     // Modify the session data, add the IP
     let modified_session =
-        insert_ip_into_session_collector(&addr, &session).map_err(|_| Status { code: 400 })?;
+        insert_cloudflare_info_into_session_collector(&cloudflare_info, &session)
+            .map_err(|_| Status { code: 400 })?;
 
     // Throw it into the database
     let db_res = state.db.add_session(&modified_session).await;

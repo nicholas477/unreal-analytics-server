@@ -1,8 +1,8 @@
 pub mod auth;
+pub mod cloudflare;
 pub mod config;
 pub mod database;
 pub mod routes;
-pub mod utils;
 
 #[macro_use]
 extern crate rocket;
@@ -16,8 +16,8 @@ pub struct ServerState {
 }
 
 #[get("/")]
-fn index(ip: utils::CloudflareIP) -> Result<Json<String>, Status> {
-    print!("User: {}", ip.0);
+fn index(info: cloudflare::CloudflareInfo) -> Result<Json<String>, Status> {
+    print!("User: {:?}", info);
     Ok(Json(String::from("Hello from rust and mongoDB")))
 }
 

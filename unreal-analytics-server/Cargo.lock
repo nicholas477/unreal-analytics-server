@@ -742,6 +742,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "dia-i18n"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "292babb903a8ffc5e23d17085137a0f33c00a07dfbc6117619c7e6dc7f4111ae"
+
+[[package]]
 name = "digest"
 version = "0.10.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3086,6 +3092,7 @@ name = "unreal-analytics-server"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "dia-i18n",
  "futures",
  "mongodb",
  "rocket",

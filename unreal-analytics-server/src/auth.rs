@@ -31,7 +31,7 @@ async fn load_state_check_key(
                 request::Outcome::Error((Status::Unauthorized, ApiKeyError::Invalid))
             }
         }
-        rocket::outcome::Outcome::Error(e) => {
+        rocket::outcome::Outcome::Error(_) => {
             eprintln!("Error trying to read server state in FromRequest!");
             request::Outcome::Error((Status::InternalServerError, ApiKeyError::Invalid))
         }
