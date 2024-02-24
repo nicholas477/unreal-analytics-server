@@ -134,15 +134,6 @@ fn insert_cloudflare_info_into_session_collector(
     Ok(res)
 }
 
-fn session_duration_to_string(session_duration: &TimeDelta) -> String {
-    format!(
-        "{}:{:0>2}:{:0>2}",
-        session_duration.num_hours(),
-        session_duration.num_minutes() % 60,
-        session_duration.num_seconds() % 60
-    )
-}
-
 // Looks at the session data and picks out NetID, StartTime, EndTime, and feedback comments for the discord message
 fn build_content_string(session: &Json<Value>) -> Result<String, Box<dyn std::error::Error>> {
     // Look into the json and pick out some interesting data
@@ -156,7 +147,7 @@ fn build_content_string(session: &Json<Value>) -> Result<String, Box<dyn std::er
         parse_start_time(&session).ok_or("Unable to find StartTime in session data")?;
     let end_time = parse_end_time(&session).ok_or("Unable to find EndTime in session data")?;
 
-    let session_duration = session_duration_to_string(&(end_time - start_time));
+    let session_duration = crate::utils::session_duration_to_string(&(end_time - start_time));
 
     let (country_code, country_name) =
         get_country_data(&session).ok_or("Unable to find country data")?;

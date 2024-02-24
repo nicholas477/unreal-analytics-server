@@ -5,6 +5,7 @@ pub mod config;
 pub mod database;
 pub mod discord_bot;
 pub mod routes;
+pub mod utils;
 
 use once_cell::sync::OnceCell;
 use std::sync::Arc;
@@ -37,12 +38,12 @@ pub fn get_server_state() -> Arc<ServerState> {
     SERVER_STATE.get().unwrap().clone()
 }
 
-fn initialize() {
+async fn initialize() {
     let config = config::read_config();
     let keys = config::read_secrets();
 
     let db = database::connect_to_db(&config);
-    //db.print_info();
+    database::fixup_database(&db).await.unwrap();
 
     let state = Arc::new(ServerState {
         db,
@@ -56,7 +57,7 @@ fn initialize() {
 
 #[rocket::main]
 async fn main() -> Result<(), rocket::Error> {
-    initialize();
+    initialize().await;
 
     discord_bot::initialize();
 
