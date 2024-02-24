@@ -1,29 +1,30 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::process::exit;
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct DiscordConfig {
     pub send_messages: bool,
     pub notify_editor_sessions: bool,
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct Config {
     pub mongodb_connection_string: String,
     pub discord_config: DiscordConfig,
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct Secrets {
     pub keys: Keys,
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct Keys {
     pub todolist_auth_key: String,
     pub cactus_auth_key: String,
     pub discord_webhook: String,
+    pub discord_token: String,
     pub gitlab_token: String,
 }
 

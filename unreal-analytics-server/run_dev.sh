@@ -1,2 +1,2 @@
 #!/bin/bash
-ROCKET_ADDRESS=0.0.0.0 ROCKET_PORT=9953 cargo run
+ROCKET_CONFIG=$PWD/config/Rocket.toml cargo run

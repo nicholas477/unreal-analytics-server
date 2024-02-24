@@ -1,16 +1,19 @@
-use crate::cloudflare;
+use std::sync::Arc;
+
+use crate::{cloudflare, get_server_state};
 use chrono::{NaiveDateTime, TimeDelta};
 use serenity::builder::ExecuteWebhook;
 use serenity::{builder::CreateAttachment, http::Http, model::webhook::Webhook};
 
 use rocket::{
     http::Status,
+    post,
     serde::json::serde_json,
     serde::json::{Json, Value},
     State,
 };
 
-fn get_end_time(session: &Json<Value>) -> Option<NaiveDateTime> {
+fn parse_end_time(session: &Json<Value>) -> Option<NaiveDateTime> {
     let start_time_str = session
         .as_object()?
         .get("BP_SessionAnalyicsCollector_C")?
@@ -20,7 +23,7 @@ fn get_end_time(session: &Json<Value>) -> Option<NaiveDateTime> {
     NaiveDateTime::parse_from_str(start_time_str, "%Y.%m.%d-%H.%M.%S").ok()
 }
 
-fn get_start_time(session: &Json<Value>) -> Option<NaiveDateTime> {
+fn parse_start_time(session: &Json<Value>) -> Option<NaiveDateTime> {
     let start_time_str = session
         .as_object()?
         .get("BP_SessionAnalyicsCollector_C")?
@@ -149,8 +152,9 @@ fn build_content_string(session: &Json<Value>) -> Result<String, Box<dyn std::er
 
     let comments = get_feedback_comments(&session).unwrap_or(Vec::new());
 
-    let start_time = get_start_time(&session).ok_or("Unable to find StartTime in session data")?;
-    let end_time = get_end_time(&session).ok_or("Unable to find EndTime in session data")?;
+    let start_time =
+        parse_start_time(&session).ok_or("Unable to find StartTime in session data")?;
+    let end_time = parse_end_time(&session).ok_or("Unable to find EndTime in session data")?;
 
     let session_duration = session_duration_to_string(&(end_time - start_time));
 
@@ -210,24 +214,23 @@ async fn send_discord_session_info(
 
 use crate::auth::ApiKey;
 
-pub fn try_spawn_discord_message_task(session: Json<Value>, state: &State<crate::ServerState>) {
-    let lock = match state.config.read() {
-        Ok(l) => l,
-        Err(e) => {
-            eprintln!(
-                "Failed to acquire server state lock! Err: {}",
-                e.to_string()
-            );
+pub fn try_spawn_discord_message_task(session: Json<Value>) {
+    let state = get_server_state();
+    let config = match state.read_config() {
+        Some(config) => config,
+        None => {
+            eprintln!("Failed to acquire server state lock!");
             return;
         }
     };
 
-    if !lock.discord_config.send_messages {
+    if !config.discord_config.send_messages {
         return;
     }
 
     // Don't send editor session messages if it's an editor sesh
-    if is_editor_session(&session).unwrap_or(false) && !lock.discord_config.notify_editor_sessions {
+    if is_editor_session(&session).unwrap_or(false) && !config.discord_config.notify_editor_sessions
+    {
         return;
     }
 
@@ -241,7 +244,6 @@ pub fn try_spawn_discord_message_task(session: Json<Value>, state: &State<crate:
 pub async fn upload_session(
     _key: ApiKey,
     cloudflare_info: cloudflare::CloudflareInfo,
-    state: &State<crate::ServerState>,
     session: Json<Value>,
 ) -> Result<String, Status> {
     // Modify the session data, add the IP
@@ -249,13 +251,15 @@ pub async fn upload_session(
         insert_cloudflare_info_into_session_collector(&cloudflare_info, &session)
             .map_err(|_| Status { code: 400 })?;
 
+    let state = crate::get_server_state();
+
     // Throw it into the database
     let db_res = state.db.add_session(&modified_session).await;
 
     match db_res {
         Ok(_) => {
             // Spawn the discord task async so that we don't have to wait before returning a http response
-            try_spawn_discord_message_task(modified_session, state);
+            try_spawn_discord_message_task(modified_session);
 
             Ok("".to_string())
         }

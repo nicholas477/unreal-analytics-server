@@ -1,8 +1,6 @@
 FROM rust:1.74.1
 
-ENV ROCKET_ADDRESS=0.0.0.0
-ENV ROCKET_PORT=9953
-
+ENV ROCKET_CONFIG=/app/config/Rocket.toml
 WORKDIR /app
 COPY . .
 RUN cargo install --path .
