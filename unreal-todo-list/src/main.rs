@@ -1,3 +1,4 @@
+pub mod auth;
 pub mod config;
 pub mod database;
 
@@ -92,8 +93,12 @@ async fn parse_message(msg: &String) -> Option<Message> {
     Some(Message::Text("".into()))
 }
 
-#[get("/")]
-fn echo_stream(ws: ws::WebSocket) -> ws::Stream!['static] {
+#[get("/todo-list")]
+fn echo_stream(ws: ws::WebSocket, _key: auth::ApiKey) -> ws::Stream!['static] {
+    let ws = ws.config(ws::Config {
+        ..Default::default()
+    });
+
     ws::Stream! { ws =>
         println!("New client!");
         if let Some(update_messages) = create_update_client_msg().await {
