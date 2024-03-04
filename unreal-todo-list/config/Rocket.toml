@@ -1,9 +1,9 @@
 [default]
 address = "0.0.0.0"
-port = 9953
+port = 9092
 
 [production]
 log_level = "critical"
 
 [debug]
-log_level = "critical"
+log_level = "normal"

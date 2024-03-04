@@ -8,7 +8,11 @@ services:
       - ROCKET_ADDRESS=0.0.0.0
       - ROCKET_PORT=9953
     volumes:
-      - ./unreal-analytics-server/www:/www
+      # - ./unreal-analytics-server/config:/app/config
+      # - ./unreal-analytics-server/src:/app/src
+      # - ./unreal-analytics-server/www:/app/www
+      # - ./unreal-analytics-server/target:/app/target
+      - ./unreal-analytics-server:/app
     ports:
       - 9953:9953
     depends_on:
