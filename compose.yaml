@@ -19,6 +19,19 @@ services:
       - mongo
     restart: always
 
+  todolist:
+    hostname: todolist
+    build:
+      context: unreal-todo-list
+    stop_signal: SIGINT
+    volumes:
+      - ./unreal-todo-list:/app
+    ports:
+      - 9092:9092
+    depends_on:
+      - mongo
+    restart: always
+
   mongo:
     image: mongo
     ports:

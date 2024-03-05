@@ -132,9 +132,20 @@ pub fn broadcast_message(
 }
 
 async fn handle_connection(peer_map: PeerMap, raw_stream: TcpStream, addr: SocketAddr) {
-    let mut ws_stream = accept_hdr_async(raw_stream, auth::authorize)
-        .await
-        .expect("Error during the websocket handshake occurred");
+    let mut ws_stream = {
+        let res = accept_hdr_async(raw_stream, auth::authorize).await;
+
+        match res {
+            Ok(stream) => stream,
+            Err(e) => {
+                println!(
+                    "Error during the websocket handshake occurred: {}",
+                    e.to_string()
+                );
+                return;
+            }
+        }
+    };
     println!("WebSocket connection established: {}", addr);
 
     // Insert the write part of this peer to the peer map.
