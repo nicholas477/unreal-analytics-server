@@ -81,17 +81,6 @@ async fn update_list_database(msg_json: &serde_json::Value) -> mongodb::error::R
     Ok(())
 }
 
-async fn parse_message(msg: &String) -> Option<Message> {
-    let msg_json: serde_json::Value = serde_json::from_str(msg.as_str()).ok()?;
-    let res = update_list_database(&msg_json).await;
-
-    if let Err(e) = res {
-        eprintln!("Failed to update list in database! Error: {:#?}", e);
-    }
-
-    Some(Message::Text("".into()))
-}
-
 use std::{collections::HashMap, io::Error as IoError, net::SocketAddr, sync::Mutex};
 
 use futures_channel::mpsc::{unbounded, UnboundedSender};
@@ -111,6 +100,23 @@ use tokio_tungstenite::{
 type Tx = UnboundedSender<Message>;
 type PeerMap = Arc<Mutex<HashMap<SocketAddr, Tx>>>;
 
+async fn parse_message(peer_map: &PeerMap, msg: &Message, addr: &SocketAddr) -> Option<()> {
+    if let Ok(msg_str) = msg.to_text() {
+        let msg_json: serde_json::Value = serde_json::from_str(msg_str).ok()?;
+        let res = update_list_database(&msg_json).await;
+
+        if let Err(e) = res {
+            eprintln!("Failed to update list in database! Error: {:#?}", e);
+        }
+
+        println!("Sending message back to other clients.");
+
+        broadcast_message(&peer_map, &msg, &addr).unwrap();
+    }
+
+    Some(())
+}
+
 pub fn broadcast_message(
     peer_map: &PeerMap,
     msg: &Message,
@@ -126,6 +132,24 @@ pub fn broadcast_message(
 
     for recp in broadcast_recipients {
         recp.unbounded_send(msg.clone())?;
+    }
+
+    Ok(())
+}
+
+pub fn ping(
+    peer_map: &PeerMap,
+    addr: &SocketAddr,
+) -> Result<(), futures_channel::mpsc::TrySendError<Message>> {
+    let peers = peer_map.lock().unwrap();
+
+    let broadcast_recipients = peers
+        .iter()
+        .filter(|(peer_addr, _)| peer_addr == &addr)
+        .map(|(_, ws_sink)| ws_sink);
+
+    for recp in broadcast_recipients {
+        recp.unbounded_send(Message::Ping(Vec::new()))?;
     }
 
     Ok(())
@@ -162,18 +186,11 @@ async fn handle_connection(peer_map: PeerMap, raw_stream: TcpStream, addr: Socke
     }
 
     let handle_incoming = incoming.try_for_each(|msg| {
-        println!(
-            "Received a message from {}: {}",
-            addr,
-            msg.to_text().unwrap()
-        );
+        if msg.is_text() {
+            let _ = ping(&peer_map, &addr);
 
-        futures::executor::block_on(parse_message(&msg.to_text().unwrap().to_string()));
-
-        println!("Sending message back to other clients.");
-
-        broadcast_message(&peer_map, &msg, &addr).unwrap();
-
+            futures::executor::block_on(parse_message(&peer_map, &msg, &addr));
+        }
         future::ok(())
     });
 
