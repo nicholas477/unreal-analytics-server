@@ -4,16 +4,13 @@ pub mod database;
 
 use futures::SinkExt;
 use once_cell::sync::OnceCell;
-use rocket::serde::json::serde_json;
-use serde_json::Value;
+use serde::{Deserialize, Serialize};
+use serde_json::json;
+use std::sync::mpsc::TrySendError;
 use std::sync::Arc;
 use std::sync::RwLock;
-use ws::Message;
-
-#[macro_use]
-extern crate rocket;
-
-use rocket_ws as ws;
+use tokio_tungstenite::tungstenite::handshake::server::ErrorResponse;
+use tungstenite::http::StatusCode;
 
 #[derive(Debug)]
 pub struct ServerState {
@@ -53,6 +50,7 @@ async fn initialize() {
     SERVER_STATE.set(state.clone()).unwrap();
 }
 
+// Creates a list of messages to send to connecting clients to update them on existing todo lists
 async fn create_update_client_msg() -> Option<Vec<Message>> {
     let todo_lists = get_server_state().db.get_todo_lists().await.ok()?;
     let mut messages: Vec<Message> = Vec::new();
@@ -62,7 +60,7 @@ async fn create_update_client_msg() -> Option<Vec<Message>> {
         let mut json_list = serde_json::to_value(&bson_list).unwrap();
         json_list.as_object_mut()?.insert(
             "MessageType".to_string(),
-            Value::String("TodoListUpdate".to_string()),
+            serde_json::Value::String("TodoListUpdate".to_string()),
         );
 
         messages.push(Message::Text(
@@ -73,7 +71,8 @@ async fn create_update_client_msg() -> Option<Vec<Message>> {
     Some(messages)
 }
 
-async fn update_list_database(msg_json: &Value) -> mongodb::error::Result<()> {
+// Update the list database with a new or updated list
+async fn update_list_database(msg_json: &serde_json::Value) -> mongodb::error::Result<()> {
     if let Some(document) = database::convert_list_to_bson(msg_json) {
         get_server_state().db.update_todo_list(&document).await?;
     } else {
@@ -83,7 +82,7 @@ async fn update_list_database(msg_json: &Value) -> mongodb::error::Result<()> {
 }
 
 async fn parse_message(msg: &String) -> Option<Message> {
-    let msg_json: Value = serde_json::from_str(msg.as_str()).ok()?;
+    let msg_json: serde_json::Value = serde_json::from_str(msg.as_str()).ok()?;
     let res = update_list_database(&msg_json).await;
 
     if let Err(e) = res {
@@ -93,45 +92,109 @@ async fn parse_message(msg: &String) -> Option<Message> {
     Some(Message::Text("".into()))
 }
 
-#[get("/todo-list")]
-fn echo_stream(ws: ws::WebSocket, _key: auth::ApiKey) -> ws::Stream!['static] {
-    let ws = ws.config(ws::Config {
-        ..Default::default()
-    });
+use std::{collections::HashMap, io::Error as IoError, net::SocketAddr, sync::Mutex};
 
-    ws::Stream! { ws =>
-        println!("New client!");
-        if let Some(update_messages) = create_update_client_msg().await {
-            println!("Sending client {} todo lists...", update_messages.len());
-            for msg in update_messages {
-                yield msg;
-            }
-        }
+use futures_channel::mpsc::{unbounded, UnboundedSender};
+use futures_util::{future, pin_mut, stream::TryStreamExt, StreamExt};
 
-        for await message in ws {
-            if let Ok(ws::Message::Text(ref msg)) = message {
-                if let Some(res_msg) = parse_message(msg).await {
-                    yield res_msg;
-                }
-                else
-                {
-                    println!("Shits fucked");
-                }
-            }
-        }
+use tokio::net::{TcpListener, TcpStream};
+use tokio_tungstenite::tungstenite::protocol::Message;
+
+use tokio_tungstenite::{
+    accept_hdr_async,
+    tungstenite::{
+        connect,
+        handshake::server::{Request, Response},
+    },
+};
+
+type Tx = UnboundedSender<Message>;
+type PeerMap = Arc<Mutex<HashMap<SocketAddr, Tx>>>;
+
+pub fn broadcast_message(
+    peer_map: &PeerMap,
+    msg: &Message,
+    addr: &SocketAddr,
+) -> Result<(), futures_channel::mpsc::TrySendError<Message>> {
+    let peers = peer_map.lock().unwrap();
+
+    // We want to broadcast the message to everyone except ourselves.
+    let broadcast_recipients = peers
+        .iter()
+        .filter(|(peer_addr, _)| peer_addr != &addr)
+        .map(|(_, ws_sink)| ws_sink);
+
+    for recp in broadcast_recipients {
+        recp.unbounded_send(msg.clone())?;
     }
+
+    Ok(())
 }
 
-#[rocket::main]
-async fn main() -> Result<(), rocket::Error> {
+async fn handle_connection(peer_map: PeerMap, raw_stream: TcpStream, addr: SocketAddr) {
+    let mut ws_stream = accept_hdr_async(raw_stream, auth::authorize)
+        .await
+        .expect("Error during the websocket handshake occurred");
+    println!("WebSocket connection established: {}", addr);
+
+    // Insert the write part of this peer to the peer map.
+    let (tx, rx) = unbounded();
+    peer_map.lock().unwrap().insert(addr, tx);
+
+    let (mut outgoing, incoming) = ws_stream.split();
+
+    if let Some(update_messages) = create_update_client_msg().await {
+        println!("Sending client {} todo lists...", update_messages.len());
+        for msg in update_messages {
+            outgoing.send(msg).await.unwrap();
+        }
+    }
+
+    let handle_incoming = incoming.try_for_each(|msg| {
+        println!(
+            "Received a message from {}: {}",
+            addr,
+            msg.to_text().unwrap()
+        );
+
+        futures::executor::block_on(parse_message(&msg.to_text().unwrap().to_string()));
+
+        println!("Sending message back to other clients.");
+
+        broadcast_message(&peer_map, &msg, &addr).unwrap();
+
+        future::ok(())
+    });
+
+    let handle_outgoing = rx.map(Ok).forward(outgoing);
+
+    pin_mut!(handle_incoming, handle_outgoing);
+    future::select(handle_incoming, handle_outgoing).await;
+
+    println!("{} disconnected", &addr);
+    peer_map.lock().unwrap().remove(&addr);
+}
+
+#[tokio::main]
+async fn main() -> Result<(), IoError> {
     initialize().await;
 
-    let _rocket = rocket::build()
-        .mount("/", routes![echo_stream])
-        .ignite()
-        .await?
-        .launch()
-        .await?;
+    let (addr, port) = {
+        let config = get_server_state().read_config().unwrap();
+        (config.address, config.port)
+    };
+
+    let state = PeerMap::new(Mutex::new(HashMap::new()));
+
+    // Create the event loop and TCP listener we'll accept connections on.
+    let try_socket = TcpListener::bind(format!("{}:{}", addr, port)).await;
+    let listener = try_socket.expect("Failed to bind");
+    println!("Listening on: {}:{}", addr, port);
+
+    // Let's spawn the handling of each connection in a separate task.
+    while let Ok((stream, addr)) = listener.accept().await {
+        tokio::spawn(handle_connection(state.clone(), stream, addr));
+    }
 
     Ok(())
 }

@@ -5,6 +5,8 @@ use std::process::exit;
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct Config {
     pub mongodb_connection_string: String,
+    pub address: String,
+    pub port: u16,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]

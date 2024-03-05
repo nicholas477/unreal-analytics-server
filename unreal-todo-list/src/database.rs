@@ -7,15 +7,13 @@ use mongodb::{
     options::ClientOptions,
     Client, Collection,
 };
-use rocket::http::ext::IntoCollection;
-use rocket::serde::json::Value;
 
 use chrono::{NaiveDateTime, TimeDelta, Utc};
-use rocket::Data;
+use serde_json::json;
 
 use crate::config;
 
-pub fn convert_list_to_bson(list: &Value) -> Option<Document> {
+pub fn convert_list_to_bson(list: &serde_json::Value) -> Option<Document> {
     let document = mongodb::bson::to_document(&mongodb::bson::to_bson(list).ok()?).ok()?;
     // println!("Converted to json");
     // println!("document: {:#?}", document);
