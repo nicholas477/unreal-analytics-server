@@ -77,6 +77,20 @@ impl Database {
         Ok(())
     }
 
+    pub async fn delete_todo_list(&self, list_id: &i64) -> mongodb::error::Result<()> {
+        let collection = self.database.collection::<Document>("todolists");
+
+        let filter = doc! {
+            "ListID": list_id
+        };
+
+        collection.delete_one(filter, None).await?;
+
+        println!("Deleted todo list: {}", list_id);
+
+        Ok(())
+    }
+
     pub async fn get_todo_lists(&self) -> mongodb::error::Result<Vec<Document>> {
         let collection = self.database.collection::<Document>("todolists");
 

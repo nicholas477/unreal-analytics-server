@@ -103,15 +103,40 @@ type PeerMap = Arc<Mutex<HashMap<SocketAddr, Tx>>>;
 async fn parse_message(peer_map: &PeerMap, msg: &Message, addr: &SocketAddr) -> Option<()> {
     if let Ok(msg_str) = msg.to_text() {
         let msg_json: serde_json::Value = serde_json::from_str(msg_str).ok()?;
-        let res = update_list_database(&msg_json).await;
 
-        if let Err(e) = res {
-            eprintln!("Failed to update list in database! Error: {:#?}", e);
+        let message_type = msg_json.get("MessageType")?.as_str()?;
+        match message_type {
+            "TodoListUpdate" => {
+                let res = update_list_database(&msg_json).await;
+
+                if let Err(e) = res {
+                    eprintln!("Failed to update list in database! Error: {:#?}", e);
+                }
+
+                println!("Sending message back to other clients.");
+
+                broadcast_message(&peer_map, &msg, &addr).unwrap();
+            }
+            "TodoListDelete" => {
+                let todo_list_id = msg_json.get("ListID")?.as_i64()?;
+
+                let res = get_server_state().db.delete_todo_list(&todo_list_id).await;
+
+                if let Err(e) = res {
+                    eprintln!("Error deleting todo list! Err: {}", e.to_string());
+                    return None;
+                }
+
+                let todo_list_name = msg_json.get("ListName").map(|obj| obj.as_str()).flatten();
+                println!("Deleted todo list: {:?} ({})", todo_list_name, todo_list_id);
+
+                broadcast_message(&peer_map, &msg, &addr).unwrap();
+            }
+            str => {
+                eprintln!("Unknown command type: {}", str);
+                return None;
+            }
         }
-
-        println!("Sending message back to other clients.");
-
-        broadcast_message(&peer_map, &msg, &addr).unwrap();
     }
 
     Some(())
