@@ -146,14 +146,5 @@ async fn handle_event(event: crate::state::ServerEvent) -> Option<()> {
 }
 
 pub async fn start_event_listener() -> tokio::task::JoinHandle<()> {
-    tokio::spawn(async move {
-        let mut rx = {
-            let (_, rx) = crate::state::get_event_channel();
-            rx.clone()
-        };
-
-        while let Ok(event) = rx.recv().await {
-            tokio::spawn(handle_event(event));
-        }
-    })
+    crate::state::add_server_event_handler(handle_event).await
 }

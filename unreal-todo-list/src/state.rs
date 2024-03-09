@@ -1,7 +1,7 @@
 //use futures_lite::{future::block_on, stream::StreamExt};
 use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
-use std::{sync::RwLock};
+use std::sync::RwLock;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TodoList {
@@ -72,6 +72,26 @@ pub async fn broadcast_server_event(
     let (tx, _) = get_event_channel();
     println!("Broadcasting server event: {}", event.get_event_enum_name());
     tx.broadcast(event.clone()).await
+}
+
+pub async fn add_server_event_handler<Future, Func: (Fn(ServerEvent) -> Future)>(
+    f: Func,
+) -> tokio::task::JoinHandle<()>
+where
+    Future: futures::Future + Send + 'static,
+    Future::Output: Send + 'static,
+    Func: Send + 'static,
+{
+    tokio::spawn(async move {
+        let mut rx = {
+            let (_, rx) = crate::state::get_event_channel();
+            rx.clone()
+        };
+
+        while let Ok(event) = rx.recv().await {
+            tokio::spawn(f(event));
+        }
+    })
 }
 
 pub fn initialize(state: ServerState) {

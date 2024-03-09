@@ -261,21 +261,13 @@ pub async fn start() -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         // Listen for server events so we can broadcast them back out to clients
         let listener_state = state.clone();
-        let event_listener_task = tokio::spawn(async move {
-            let mut rx = {
-                let (_, rx) = crate::state::get_event_channel();
-                rx.clone()
-            };
-
-            while let Ok(event) = rx.recv().await {
-                tokio::spawn(handle_event(listener_state.clone(), event));
-            }
-        });
+        crate::state::add_server_event_handler(move |event| {
+            return handle_event(listener_state.clone(), event);
+        })
+        .await;
 
         while let Ok((stream, addr)) = listener.accept().await {
             tokio::spawn(handle_connection(state.clone(), stream, addr));
         }
-
-        let _ = event_listener_task.await;
     })
 }

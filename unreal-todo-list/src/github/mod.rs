@@ -99,7 +99,7 @@ pub async fn send_github_request(
     res.ok()?.json::<serde_json::Value>().await.ok()
 }
 
-pub fn get_list_github_id(list: &Document) -> Option<i64> {
+pub fn get_db_list_github_id(list: &Document) -> Option<i64> {
     let list_id = list
         .get_document("SerializedList")
         .ok()?
@@ -124,7 +124,7 @@ struct GithubIssue {
 //'{"title":"Found a bug","body":"I'\''m having a problem with this.","assignees":["octocat"],"milestone":1,"labels":["bug"]}'
 pub async fn create_issue(list: &Document) -> Option<i64> {
     // Don't create a list if this one already has an ID
-    if let Some(_list_id) = get_list_github_id(list) {
+    if let Some(_list_id) = get_db_list_github_id(list) {
         println!("Issue already exists");
         return None;
     }
@@ -186,6 +186,18 @@ pub async fn initialize() -> Option<()> {
     Some(())
 }
 
+// Event handler for server events
+async fn handle_event(event: crate::state::ServerEvent) -> Option<()> {
+    use crate::state::ServerEvent;
+    return match event {
+        ServerEvent::TodoListUpdate { list } => {
+            //if ()
+            None
+        }
+        ServerEvent::TodoListDelete { id } => None,
+    };
+}
+
 #[post("/todo-list/webhook", data = "<data>")]
 pub fn hook(data: Json<Value>) -> Result<Json<String>, Status> {
     //println!("Received post request! {:#?}", data);
@@ -193,9 +205,11 @@ pub fn hook(data: Json<Value>) -> Result<Json<String>, Status> {
 }
 
 pub async fn start() -> tokio::task::JoinHandle<()> {
-    let handle = tokio::spawn(async move {
+    let server_handle = tokio::spawn(async move {
         let _rocket = rocket::build().mount("/", routes![hook]).launch().await;
     });
 
-    handle
+    let _event_handle = crate::state::add_server_event_handler(handle_event).await;
+
+    server_handle
 }
