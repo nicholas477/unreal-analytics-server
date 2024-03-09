@@ -10,16 +10,12 @@ use mongodb::{
 
 use crate::config;
 
-pub fn convert_list_to_bson(list: &serde_json::Value) -> Option<Document> {
-    let document = mongodb::bson::to_document(&mongodb::bson::to_bson(list).ok()?).ok()?;
-    // println!("Converted to json");
-    // println!("document: {:#?}", document);
+pub fn convert_list_to_bson(list: &crate::state::TodoList) -> Option<Document> {
+    let document = mongodb::bson::to_document(&mongodb::bson::to_bson(&list.list).ok()?).ok()?;
 
-    let list_id = document.get_i64("ListID").ok()?;
-    let list_name = document.get_str("ListName").ok()?;
-    let serialized_list = document.get_document("SerializedList").ok()?;
-
-    Some(doc!["ListID": list_id, "ListName": list_name, "SerializedList": serialized_list])
+    Some(
+        doc!["ListID": list.list_id, "ListName": list.list_name.clone(), "SerializedList": document],
+    )
 }
 
 #[derive(Debug)]
@@ -69,8 +65,6 @@ impl Database {
             .find_one_and_update(filter, update, Some(options))
             .await?;
 
-        println!("Updated todo list: {}", list_name);
-
         Ok(())
     }
 
@@ -82,8 +76,6 @@ impl Database {
         };
 
         collection.delete_one(filter, None).await?;
-
-        println!("Deleted todo list: {}", list_id);
 
         Ok(())
     }
@@ -107,4 +99,61 @@ pub fn connect_to_db(config: &config::Config) -> Database {
         client,
         database: db,
     }
+}
+
+// Event handler for server events
+async fn handle_event(event: crate::state::ServerEvent) -> Option<()> {
+    use crate::state::ServerEvent;
+    return match event {
+        ServerEvent::TodoListUpdate { list } => {
+            if let Some(document) = convert_list_to_bson(&list) {
+                let res = crate::state::get_server_state()
+                    .db
+                    .update_todo_list(&document)
+                    .await;
+
+                match res.clone() {
+                    Ok(_) => println!("Updated todo list in database"),
+                    Err(e) => {
+                        eprintln!("Failed to update todolist in database!");
+                        eprintln!("Error: {}", e.to_string());
+                    }
+                }
+
+                res.ok()
+            } else {
+                eprintln!("Database event listener failed to convert message to json!!!!");
+                None
+            }
+        }
+        ServerEvent::TodoListDelete { id } => {
+            let res = crate::state::get_server_state()
+                .db
+                .delete_todo_list(&id)
+                .await;
+
+            match res.clone() {
+                Ok(_) => println!("Deleted todo list in database: {}", id),
+                Err(e) => {
+                    eprintln!("Failed to delete todolist in database!");
+                    eprintln!("Error: {}", e.to_string());
+                }
+            }
+
+            res.ok()
+        }
+    };
+}
+
+pub async fn start_event_listener() -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        let mut rx = {
+            let (_, rx) = crate::state::get_event_channel();
+            rx.clone()
+        };
+
+        while let Ok(event) = rx.recv().await {
+            tokio::spawn(handle_event(event));
+        }
+    })
 }

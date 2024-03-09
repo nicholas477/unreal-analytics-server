@@ -1,6 +1,7 @@
 pub mod auth;
 
 use futures::SinkExt;
+use serde_json::json;
 
 use std::sync::Arc;
 
@@ -17,9 +18,33 @@ use tokio_tungstenite::accept_hdr_async;
 type Tx = UnboundedSender<Message>;
 type PeerMap = Arc<Mutex<HashMap<SocketAddr, Tx>>>;
 
+fn message_to_todolist(msg_json: &serde_json::Value) -> Option<crate::state::TodoList> {
+    let list_id = msg_json.get("ListID")?.as_i64()?;
+    let list_name = msg_json.get("ListName")?.as_str()?;
+    let list = msg_json.get("SerializedList")?;
+
+    Some(crate::state::TodoList {
+        list_id: list_id,
+        list_name: list_name.into(),
+        list: list.clone(),
+    })
+}
+
+fn todolist_to_message(todolist: &crate::state::TodoList) -> serde_json::Value {
+    json!({
+        "ListID": todolist.list_id,
+        "ListName": todolist.list_name,
+        "SerializedList": todolist.list
+    })
+}
+
 // Creates a list of messages to send to connecting clients to update them on existing todo lists
 async fn create_update_client_msg() -> Option<Vec<Message>> {
-    let todo_lists = crate::get_server_state().db.get_todo_lists().await.ok()?;
+    let todo_lists = crate::state::get_server_state()
+        .db
+        .get_todo_lists()
+        .await
+        .ok()?;
     let mut messages: Vec<Message> = Vec::new();
     messages.reserve(todo_lists.len());
 
@@ -38,53 +63,38 @@ async fn create_update_client_msg() -> Option<Vec<Message>> {
     Some(messages)
 }
 
-// Update the list database with a new or updated list
-async fn update_list_database(msg_json: &serde_json::Value) -> mongodb::error::Result<()> {
-    if let Some(document) = crate::database::convert_list_to_bson(msg_json) {
-        crate::get_server_state()
-            .db
-            .update_todo_list(&document)
-            .await?;
-    } else {
-        eprintln!("Failed to convert message to json!!!!");
-    }
-    Ok(())
-}
-
-async fn parse_message(peer_map: &PeerMap, msg: &Message, addr: &SocketAddr) -> Option<()> {
+async fn parse_message(_peer_map: &PeerMap, msg: &Message, _addr: &SocketAddr) -> Option<()> {
     if let Ok(msg_str) = msg.to_text() {
         let msg_json: serde_json::Value = serde_json::from_str(msg_str).ok()?;
+        println!("New websocket message");
 
         let message_type = msg_json.get("MessageType")?.as_str()?;
         match message_type {
             "TodoListUpdate" => {
-                let res = update_list_database(&msg_json).await;
+                let event = crate::state::ServerEvent::TodoListUpdate {
+                    list: message_to_todolist(&msg_json)?,
+                };
 
-                if let Err(e) = res {
-                    eprintln!("Failed to update list in database! Error: {:#?}", e);
-                }
+                if let Err(e) = crate::state::broadcast_server_event(event).await {
+                    eprintln!(
+                        "Failed to broadcast server event for websocket TodoListUpdate message!"
+                    );
 
-                println!("Sending message back to other clients.");
-
-                broadcast_message(&peer_map, &msg, &addr).unwrap();
+                    eprintln!("Error: {}", e.to_string());
+                };
             }
             "TodoListDelete" => {
                 let todo_list_id = msg_json.get("ListID")?.as_i64()?;
 
-                let res = crate::get_server_state()
-                    .db
-                    .delete_todo_list(&todo_list_id)
-                    .await;
+                let event = crate::state::ServerEvent::TodoListDelete { id: todo_list_id };
 
-                if let Err(e) = res {
-                    eprintln!("Error deleting todo list! Err: {}", e.to_string());
-                    return None;
-                }
+                if let Err(e) = crate::state::broadcast_server_event(event).await {
+                    eprintln!(
+                        "Failed to broadcast server event for websocket TodoListDelete message!"
+                    );
 
-                let todo_list_name = msg_json.get("ListName").map(|obj| obj.as_str()).flatten();
-                println!("Deleted todo list: {:?} ({})", todo_list_name, todo_list_id);
-
-                broadcast_message(&peer_map, &msg, &addr).unwrap();
+                    eprintln!("Error: {}", e.to_string());
+                };
             }
             str => {
                 eprintln!("Unknown command type: {}", str);
@@ -99,14 +109,19 @@ async fn parse_message(peer_map: &PeerMap, msg: &Message, addr: &SocketAddr) -> 
 pub fn broadcast_message(
     peer_map: &PeerMap,
     msg: &Message,
-    addr: &SocketAddr,
+    addr: Option<&SocketAddr>,
 ) -> Result<(), futures_channel::mpsc::TrySendError<Message>> {
     let peers = peer_map.lock().unwrap();
 
     // We want to broadcast the message to everyone except ourselves.
     let broadcast_recipients = peers
         .iter()
-        .filter(|(peer_addr, _)| peer_addr != &addr)
+        .filter(|(peer_addr, _)| {
+            if let Some(addr) = addr {
+                return peer_addr != &addr;
+            }
+            return true;
+        })
         .map(|(_, ws_sink)| ws_sink);
 
     for recp in broadcast_recipients {
@@ -182,23 +197,85 @@ async fn handle_connection(peer_map: PeerMap, raw_stream: TcpStream, addr: Socke
     peer_map.lock().unwrap().remove(&addr);
 }
 
+// Event handler for server events
+async fn handle_event(peer_map: PeerMap, event: crate::state::ServerEvent) -> Option<()> {
+    use crate::state::ServerEvent;
+    return match event {
+        ServerEvent::TodoListUpdate { list } => {
+            let mut msg_json = todolist_to_message(&list);
+
+            // Insert the message type
+            msg_json.as_object_mut()?.insert(
+                "MessageType".into(),
+                serde_json::Value::String("TodoListUpdate".into()),
+            )?;
+
+            let msg = serde_json::to_string(&msg_json).ok()?;
+            let res = broadcast_message(&peer_map, &Message::text(msg), None);
+            match res.clone() {
+                Ok(_) => println!("Broadcasted todo list update to websocket listeners"),
+                Err(e) => {
+                    eprintln!("Failed to broadcast todo list update to websocket listeners!");
+                    eprintln!("Error: {}", e.to_string());
+                }
+            }
+
+            res.ok()
+        }
+        ServerEvent::TodoListDelete { id } => {
+            let msg_json = json!({
+                "MessageType": "TodoListDelete",
+                "ListID": id
+            });
+
+            let msg = serde_json::to_string(&msg_json).ok()?;
+            let res = broadcast_message(&peer_map, &Message::text(msg), None);
+            match res.clone() {
+                Ok(_) => println!("Broadcasted todo list delete to websocket listeners"),
+                Err(e) => {
+                    eprintln!("Failed to broadcast todo list delete to websocket listeners!");
+                    eprintln!("Error: {}", e.to_string());
+                }
+            }
+
+            res.ok()
+        }
+    };
+}
+
 pub async fn start() -> tokio::task::JoinHandle<()> {
     let (addr, port) = {
-        let config = crate::get_server_state().read_config().unwrap();
+        let config = crate::state::get_server_state().read_config().unwrap();
         (config.websocket.address, config.websocket.port)
     };
 
     let state = PeerMap::new(Mutex::new(HashMap::new()));
 
     // Create the event loop and TCP listener we'll accept connections on.
+    println!("Websocket trying to bind to: {}:{}", addr, port);
     let try_socket = TcpListener::bind(format!("{}:{}", addr, port)).await;
     let listener = try_socket.expect("Failed to bind");
     println!("Websocket listening on: {}:{}", addr, port);
 
     // Let's spawn the handling of each connection in a separate task.
     tokio::spawn(async move {
+        // Listen for server events so we can broadcast them back out to clients
+        let listener_state = state.clone();
+        let event_listener_task = tokio::spawn(async move {
+            let mut rx = {
+                let (_, rx) = crate::state::get_event_channel();
+                rx.clone()
+            };
+
+            while let Ok(event) = rx.recv().await {
+                tokio::spawn(handle_event(listener_state.clone(), event));
+            }
+        });
+
         while let Ok((stream, addr)) = listener.accept().await {
             tokio::spawn(handle_connection(state.clone(), stream, addr));
         }
+
+        let _ = event_listener_task.await;
     })
 }

@@ -53,7 +53,10 @@ pub fn authorize(
 
     let auth = req.headers().get("Authorization").ok_or(mk_err())?;
 
-    let ref auth_key = crate::get_server_state().secrets.keys.todolist_auth_key;
+    let ref auth_key = crate::state::get_server_state()
+        .secrets
+        .keys
+        .todolist_auth_key;
     if auth == auth_key {
         println!(
             "Authorized socket connection for: {}",

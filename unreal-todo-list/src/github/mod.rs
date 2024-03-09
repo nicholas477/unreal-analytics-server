@@ -21,7 +21,7 @@ pub struct GithubState {
 }
 
 pub fn get_github_repo() -> Option<crate::config::GithubConfig> {
-    let github_config = crate::get_server_state()
+    let github_config = crate::state::get_server_state()
         .config
         .try_read()
         .ok()?
@@ -42,7 +42,7 @@ pub async fn send_github_request_with_token(
 ) -> Option<serde_json::Value> {
     let method = method.unwrap_or(http::method::Method::GET);
     let url = format!("https://api.github.com{}", endpoint);
-    let user_agent = crate::get_server_state()
+    let user_agent = crate::state::get_server_state()
         .config
         .try_read()
         .ok()?
@@ -73,7 +73,7 @@ pub async fn send_github_request(
         refresh_access_token().await?;
     }
 
-    let token = crate::get_server_state()
+    let token = crate::state::get_server_state()
         .github_state
         .try_read()
         .ok()?
@@ -82,7 +82,7 @@ pub async fn send_github_request(
 
     let method = method.unwrap_or(http::method::Method::GET);
     let url = format!("https://api.github.com{}", endpoint);
-    let user_agent = crate::get_server_state()
+    let user_agent = crate::state::get_server_state()
         .config
         .try_read()
         .ok()?
@@ -155,7 +155,11 @@ pub async fn create_issue(list: &Document) -> Option<i64> {
 }
 
 pub async fn create_issues() -> Option<()> {
-    let mut lists = crate::get_server_state().db.get_todo_lists().await.ok()?;
+    let mut lists = crate::state::get_server_state()
+        .db
+        .get_todo_lists()
+        .await
+        .ok()?;
 
     for mut list in lists {
         if let Some(new_issue_id) = create_issue(&list).await {
@@ -167,7 +171,7 @@ pub async fn create_issues() -> Option<()> {
                 .insert("__Value", new_issue_id)?;
 
             // Update with the new ID
-            crate::get_server_state()
+            crate::state::get_server_state()
                 .db
                 .update_todo_list(&list)
                 .await

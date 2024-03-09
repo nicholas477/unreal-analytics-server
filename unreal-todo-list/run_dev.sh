@@ -1,2 +1,2 @@
 #!/bin/bash
-ROCKET_CONFIG=$PWD/config/Rocket.toml cargo run
+RUST_BACKTRACE=1 ROCKET_CONFIG=$PWD/config/Rocket.toml cargo run

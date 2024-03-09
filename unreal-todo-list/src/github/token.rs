@@ -62,7 +62,7 @@ pub fn create_token(config: &crate::config::GithubConfig) -> Option<String> {
 }
 
 pub async fn request_access_token() -> Option<AccessToken> {
-    let github_config = crate::get_server_state()
+    let github_config = crate::state::get_server_state()
         .config
         .try_read()
         .ok()?
@@ -96,7 +96,7 @@ pub async fn request_access_token() -> Option<AccessToken> {
 
 /// Returns true if the access token is going to expire soon
 pub fn should_refresh_access_token() -> Option<bool> {
-    let expiration_timestamp = crate::get_server_state()
+    let expiration_timestamp = crate::state::get_server_state()
         .github_state
         .try_read()
         .ok()?
@@ -111,7 +111,7 @@ pub async fn refresh_access_token() -> Option<()> {
     println!("Refreshing access token");
     let access_token = request_access_token().await?;
 
-    crate::get_server_state()
+    crate::state::get_server_state()
         .github_state
         .try_write()
         .ok()?
