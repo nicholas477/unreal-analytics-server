@@ -3,11 +3,24 @@ use std::fs;
 use std::process::exit;
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct Config {
-    pub mongodb_connection_string: String,
+pub struct GithubConfig {
+    pub app_id: u64,
+    pub app_key_file: String,
+    pub app_name: Option<String>,
+    pub repo: String,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct PortBindConfig {
     pub address: String,
     pub port: u16,
-    pub github_app_id: u64,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct Config {
+    pub mongodb_connection_string: String,
+    pub websocket: PortBindConfig,
+    pub github: GithubConfig,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -18,7 +31,6 @@ pub struct Secrets {
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct Keys {
     pub todolist_auth_key: String,
-    pub github_app_key_file: String,
 }
 
 pub fn read_config() -> Config {

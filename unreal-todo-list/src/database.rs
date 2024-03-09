@@ -1,15 +1,12 @@
 use futures::executor::block_on;
 use futures::StreamExt;
-use mongodb::options::{FindOneAndUpdateOptions};
+use mongodb::options::FindOneAndUpdateOptions;
 
 use mongodb::{
     bson::{doc, Document},
     options::ClientOptions,
     Client,
 };
-
-
-
 
 use crate::config;
 
