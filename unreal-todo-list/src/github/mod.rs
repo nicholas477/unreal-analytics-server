@@ -1,3 +1,4 @@
+pub mod issue;
 pub mod token;
 
 use mongodb::bson::{doc, Document};
@@ -115,37 +116,21 @@ pub fn get_db_list_github_id(list: &Document) -> Option<i64> {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-struct GithubIssue {
-    title: String,
-    body: String,
-}
+pub fn get_list_github_id(list: &crate::state::TodoList) -> Option<i64> {
+    let list_id = list
+        .list
+        .get("SerializedList")?
+        .as_object()?
+        .get("GithubIssueID")?
+        .as_object()?
+        .get("__Value")?
+        .as_i64()?;
 
-//'{"title":"Found a bug","body":"I'\''m having a problem with this.","assignees":["octocat"],"milestone":1,"labels":["bug"]}'
-pub async fn create_issue(list: &Document) -> Option<i64> {
-    // Don't create a list if this one already has an ID
-    if let Some(_list_id) = get_db_list_github_id(list) {
-        println!("Issue already exists");
+    if list_id >= 0 {
+        return Some(list_id);
+    } else {
         return None;
     }
-
-    let list_name = list.get_str("ListName").ok()?;
-
-    let new_issue = GithubIssue {
-        title: list_name.to_string(),
-        body: "".into(),
-    };
-
-    let new_issue_res = send_github_request(
-        format!("/repos/{}/issues", get_github_repo()?.repo),
-        Some(http::method::Method::POST),
-        Some(serde_json::to_string(&new_issue).ok()?),
-    )
-    .await?;
-
-    println!("new issue res: {:#?}", new_issue_res);
-
-    Some(new_issue_res.get("number")?.as_i64()?)
 }
 
 pub async fn create_issues() -> Option<()> {
@@ -156,7 +141,8 @@ pub async fn create_issues() -> Option<()> {
         .ok()?;
 
     for mut list in lists {
-        if let Some(new_issue_id) = create_issue(&list).await {
+        let todolist = crate::state::TodoList::from_bson(&list)?;
+        if let Some(new_issue_id) = issue::create_issue(&todolist).await {
             // Insert the new value into the old list
             list.get_document_mut("SerializedList")
                 .ok()?

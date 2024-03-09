@@ -18,24 +18,26 @@ use tokio_tungstenite::accept_hdr_async;
 type Tx = UnboundedSender<Message>;
 type PeerMap = Arc<Mutex<HashMap<SocketAddr, Tx>>>;
 
-fn message_to_todolist(msg_json: &serde_json::Value) -> Option<crate::state::TodoList> {
-    let list_id = msg_json.get("ListID")?.as_i64()?;
-    let list_name = msg_json.get("ListName")?.as_str()?;
-    let list = msg_json.get("SerializedList")?;
+impl crate::state::TodoList {
+    pub fn to_websocket_message(&self) -> serde_json::Value {
+        json!({
+            "ListID": self.list_id,
+            "ListName": self.list_name,
+            "SerializedList": self.list
+        })
+    }
 
-    Some(crate::state::TodoList {
-        list_id: list_id,
-        list_name: list_name.into(),
-        list: list.clone(),
-    })
-}
+    pub fn from_websocket_message(msg_json: &serde_json::Value) -> Option<Self> {
+        let list_id = msg_json.get("ListID")?.as_i64()?;
+        let list_name = msg_json.get("ListName")?.as_str()?;
+        let list = msg_json.get("SerializedList")?;
 
-fn todolist_to_message(todolist: &crate::state::TodoList) -> serde_json::Value {
-    json!({
-        "ListID": todolist.list_id,
-        "ListName": todolist.list_name,
-        "SerializedList": todolist.list
-    })
+        Some(crate::state::TodoList {
+            list_id: list_id,
+            list_name: list_name.into(),
+            list: list.clone(),
+        })
+    }
 }
 
 // Creates a list of messages to send to connecting clients to update them on existing todo lists
@@ -72,7 +74,7 @@ async fn parse_message(_peer_map: &PeerMap, msg: &Message, _addr: &SocketAddr) -
         match message_type {
             "TodoListUpdate" => {
                 let event = crate::state::ServerEvent::TodoListUpdate {
-                    list: message_to_todolist(&msg_json)?,
+                    list: crate::state::TodoList::from_websocket_message(&msg_json)?,
                 };
 
                 if let Err(e) = crate::state::broadcast_server_event(event).await {
@@ -202,7 +204,7 @@ async fn handle_event(peer_map: PeerMap, event: crate::state::ServerEvent) -> Op
     use crate::state::ServerEvent;
     return match event {
         ServerEvent::TodoListUpdate { list } => {
-            let mut msg_json = todolist_to_message(&list);
+            let mut msg_json = list.to_websocket_message();
 
             // Insert the message type
             msg_json.as_object_mut()?.insert(

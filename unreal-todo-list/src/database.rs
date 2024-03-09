@@ -10,12 +10,27 @@ use mongodb::{
 
 use crate::config;
 
-pub fn convert_list_to_bson(list: &crate::state::TodoList) -> Option<Document> {
-    let document = mongodb::bson::to_document(&mongodb::bson::to_bson(&list.list).ok()?).ok()?;
+impl crate::state::TodoList {
+    pub fn to_bson(&self) -> Option<Document> {
+        let document =
+            mongodb::bson::to_document(&mongodb::bson::to_bson(&self.list).ok()?).ok()?;
 
-    Some(
-        doc!["ListID": list.list_id, "ListName": list.list_name.clone(), "SerializedList": document],
-    )
+        Some(
+            doc!["ListID": self.list_id, "ListName": self.list_name.clone(), "SerializedList": document],
+        )
+    }
+
+    pub fn from_bson(list: &Document) -> Option<Self> {
+        let list_name = list.get_str("ListName").ok()?;
+        let list_id = list.get_i64("ListID").ok()?;
+        let list = list.get_document("SerializedList").ok()?;
+
+        Some(crate::state::TodoList {
+            list_id: list_id,
+            list_name: list_name.into(),
+            list: serde_json::to_value(list).ok()?,
+        })
+    }
 }
 
 #[derive(Debug)]
@@ -106,7 +121,7 @@ async fn handle_event(event: crate::state::ServerEvent) -> Option<()> {
     use crate::state::ServerEvent;
     return match event {
         ServerEvent::TodoListUpdate { list } => {
-            if let Some(document) = convert_list_to_bson(&list) {
+            if let Some(document) = list.to_bson() {
                 let res = crate::state::get_server_state()
                     .db
                     .update_todo_list(&document)
