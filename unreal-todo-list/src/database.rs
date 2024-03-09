@@ -20,7 +20,7 @@ pub fn convert_list_to_bson(list: &serde_json::Value) -> Option<Document> {
 
     let list_id = document.get_i64("ListID").ok()?;
     let list_name = document.get_str("ListName").ok()?;
-    let serialized_list = document.get_str("SerializedList").ok()?;
+    let serialized_list = document.get_document("SerializedList").ok()?;
 
     Some(doc!["ListID": list_id, "ListName": list_name, "SerializedList": serialized_list])
 }

@@ -7,6 +7,7 @@ pub struct Config {
     pub mongodb_connection_string: String,
     pub address: String,
     pub port: u16,
+    pub github_app_id: u64,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -17,6 +18,7 @@ pub struct Secrets {
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct Keys {
     pub todolist_auth_key: String,
+    pub github_app_key_file: String,
 }
 
 pub fn read_config() -> Config {

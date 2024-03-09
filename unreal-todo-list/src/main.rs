@@ -1,6 +1,7 @@
 pub mod auth;
 pub mod config;
 pub mod database;
+pub mod github;
 
 use futures::SinkExt;
 use once_cell::sync::OnceCell;
@@ -11,6 +12,25 @@ use std::sync::Arc;
 use std::sync::RwLock;
 use tokio_tungstenite::tungstenite::handshake::server::ErrorResponse;
 use tungstenite::http::StatusCode;
+
+use std::{collections::HashMap, io::Error as IoError, net::SocketAddr, sync::Mutex};
+
+use futures_channel::mpsc::{unbounded, UnboundedSender};
+use futures_util::{future, pin_mut, stream::TryStreamExt, StreamExt};
+
+use tokio::net::{TcpListener, TcpStream};
+use tokio_tungstenite::tungstenite::protocol::Message;
+
+use tokio_tungstenite::{
+    accept_hdr_async,
+    tungstenite::{
+        connect,
+        handshake::server::{Request, Response},
+    },
+};
+
+type Tx = UnboundedSender<Message>;
+type PeerMap = Arc<Mutex<HashMap<SocketAddr, Tx>>>;
 
 #[derive(Debug)]
 pub struct ServerState {
@@ -80,25 +100,6 @@ async fn update_list_database(msg_json: &serde_json::Value) -> mongodb::error::R
     }
     Ok(())
 }
-
-use std::{collections::HashMap, io::Error as IoError, net::SocketAddr, sync::Mutex};
-
-use futures_channel::mpsc::{unbounded, UnboundedSender};
-use futures_util::{future, pin_mut, stream::TryStreamExt, StreamExt};
-
-use tokio::net::{TcpListener, TcpStream};
-use tokio_tungstenite::tungstenite::protocol::Message;
-
-use tokio_tungstenite::{
-    accept_hdr_async,
-    tungstenite::{
-        connect,
-        handshake::server::{Request, Response},
-    },
-};
-
-type Tx = UnboundedSender<Message>;
-type PeerMap = Arc<Mutex<HashMap<SocketAddr, Tx>>>;
 
 async fn parse_message(peer_map: &PeerMap, msg: &Message, addr: &SocketAddr) -> Option<()> {
     if let Ok(msg_str) = msg.to_text() {
