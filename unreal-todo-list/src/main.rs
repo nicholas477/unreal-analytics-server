@@ -4,7 +4,6 @@ pub mod github;
 pub mod state;
 pub mod websocket;
 
-#[macro_use]
 extern crate rocket;
 
 use std::io::Error as IoError;

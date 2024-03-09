@@ -1,12 +1,6 @@
 pub mod token;
 
-use chrono;
-use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
-use mongodb::{
-    bson::{doc, Document},
-    options::ClientOptions,
-    Client,
-};
+use mongodb::bson::{doc, Document};
 use rocket::serde::json::{Json, Value};
 use rocket::{http::Status, post};
 use serde::{Deserialize, Serialize};
@@ -155,7 +149,7 @@ pub async fn create_issue(list: &Document) -> Option<i64> {
 }
 
 pub async fn create_issues() -> Option<()> {
-    let mut lists = crate::state::get_server_state()
+    let lists = crate::state::get_server_state()
         .db
         .get_todo_lists()
         .await

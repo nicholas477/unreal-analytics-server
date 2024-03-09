@@ -45,9 +45,9 @@ impl Database {
             .get_i64("ListID")
             .or(Err(mongodb::error::Error::custom("JSON Error")))?;
 
-        let list_name = list
-            .get_str("ListName")
-            .or(Err(mongodb::error::Error::custom("JSON Error")))?;
+        // let list_name = list
+        //     .get_str("ListName")
+        //     .or(Err(mongodb::error::Error::custom("JSON Error")))?;
 
         let filter = doc! {
             "ListID": list_id

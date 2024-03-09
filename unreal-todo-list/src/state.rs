@@ -1,7 +1,7 @@
 //use futures_lite::{future::block_on, stream::StreamExt};
 use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
-use std::{any::Any, sync::RwLock};
+use std::{sync::RwLock};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TodoList {

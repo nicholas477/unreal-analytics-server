@@ -1,7 +1,4 @@
-use tokio_tungstenite::tungstenite::{
-    handshake::server::{Request, Response},
-    http,
-};
+use tokio_tungstenite::tungstenite::handshake::server::{Request, Response};
 
 /*
 Request headers: {
