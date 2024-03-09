@@ -5,13 +5,13 @@ pub mod github;
 
 use futures::SinkExt;
 use once_cell::sync::OnceCell;
-use serde::{Deserialize, Serialize};
-use serde_json::json;
-use std::sync::mpsc::TrySendError;
+
+
+
 use std::sync::Arc;
 use std::sync::RwLock;
-use tokio_tungstenite::tungstenite::handshake::server::ErrorResponse;
-use tungstenite::http::StatusCode;
+
+
 
 use std::{collections::HashMap, io::Error as IoError, net::SocketAddr, sync::Mutex};
 
@@ -23,10 +23,6 @@ use tokio_tungstenite::tungstenite::protocol::Message;
 
 use tokio_tungstenite::{
     accept_hdr_async,
-    tungstenite::{
-        connect,
-        handshake::server::{Request, Response},
-    },
 };
 
 type Tx = UnboundedSender<Message>;
@@ -182,7 +178,7 @@ pub fn ping(
 }
 
 async fn handle_connection(peer_map: PeerMap, raw_stream: TcpStream, addr: SocketAddr) {
-    let mut ws_stream = {
+    let ws_stream = {
         let res = accept_hdr_async(raw_stream, auth::authorize).await;
 
         match res {

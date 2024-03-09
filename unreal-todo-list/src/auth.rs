@@ -42,7 +42,7 @@ fn get_connection_info(req: &Request) -> String {
 // Authorizes a websocket connection or drops the connection if unauthorized
 pub fn authorize(
     req: &Request,
-    mut response: Response,
+    response: Response,
 ) -> Result<http::Response<()>, http::Response<Option<String>>> {
     let mk_err = || {
         Response::builder()

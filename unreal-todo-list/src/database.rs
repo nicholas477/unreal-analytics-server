@@ -1,15 +1,15 @@
 use futures::executor::block_on;
 use futures::StreamExt;
-use mongodb::options::{FindOneAndUpdateOptions, InsertOneOptions};
-use mongodb::results::InsertOneResult;
+use mongodb::options::{FindOneAndUpdateOptions};
+
 use mongodb::{
     bson::{doc, Document},
     options::ClientOptions,
-    Client, Collection,
+    Client,
 };
 
-use chrono::{NaiveDateTime, TimeDelta, Utc};
-use serde_json::json;
+
+
 
 use crate::config;
 
