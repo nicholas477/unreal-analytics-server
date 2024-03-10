@@ -253,7 +253,9 @@ use std::sync::RwLock;
 pub struct TodoList {
     pub list_id: i64,
     pub list_name: String,
+    pub github_issue_id: i64,
     pub list: serde_json::Value,
+    pub deleted: bool,
 }
 
 impl TodoList {
@@ -263,6 +265,18 @@ impl TodoList {
             .get("Tasks")?
             .get("__Value")?
             .as_array()
+    }
+}
+
+impl Default for TodoList {
+    fn default() -> TodoList {
+        TodoList {
+            list_id: -1,
+            list_name: "Todo List".into(),
+            github_issue_id: -1,
+            list: serde_json::Value::Null,
+            deleted: false,
+        }
     }
 }
 
@@ -322,10 +336,62 @@ pub fn initialize_server_event_channel() {
         .expect("Failed to set server event channel!");
 }
 
+fn fix_ids(list: &TodoList) -> Option<TodoList> {
+    use serde_json::json;
+    let mut list = list.clone();
+
+    let one: i64 = 1;
+    let list_object = list.list.as_object_mut()?;
+
+    // Sets or creates a property on the list
+    let mut set_or_insert_property =
+        |property: &str, property_type: &str, value: serde_json::Value| -> Option<()> {
+            if list_object.get(property).is_none() {
+                list_object.insert(
+                    property.into(),
+                    json!({"__Type": property_type, "__Value": value}),
+                );
+            } else {
+                list_object
+                    .get_mut(property)?
+                    .as_object_mut()?
+                    .insert("__Value".into(), value);
+            }
+
+            Some(())
+        };
+
+    set_or_insert_property("bIsNetworkedTodoList", "BoolProperty", json!(one))?;
+    set_or_insert_property("NetworkedTodoListID", "IntProperty", json!(list.list_id))?;
+    set_or_insert_property("GithubIssueID", "IntProperty", json!(list.github_issue_id))?;
+
+    Some(list)
+}
+
+async fn pretransform_event(event: ServerEvent) -> ServerEvent {
+    let mut event = event.clone();
+    match event {
+        ServerEvent::TodoListUpdate { ref mut list } => {
+            if let Some(github_issue_id) = list.get_github_id().await {
+                list.github_issue_id = github_issue_id;
+            }
+            list.clone_from(&fix_ids(list).unwrap());
+        }
+        _ => (),
+    }
+
+    println!("Pretransformed event");
+
+    return event;
+}
+
 pub async fn broadcast_server_event(
     event: ServerEvent,
 ) -> Result<Option<ServerEvent>, async_broadcast::SendError<ServerEvent>> {
+    let event = pretransform_event(event).await;
+
     let (tx, _) = get_event_channel();
+    println!("========================================");
     println!("Broadcasting server event: {}", event.get_event_enum_name());
     tx.broadcast(event.clone()).await
 }

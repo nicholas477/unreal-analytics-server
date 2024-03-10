@@ -8,7 +8,8 @@ use mongodb::{
     Client,
 };
 
-use crate::config;
+use crate::state::TodoList;
+use crate::{config, state};
 
 impl crate::state::TodoList {
     pub fn to_bson(&self) -> Option<Document> {
@@ -16,7 +17,7 @@ impl crate::state::TodoList {
             mongodb::bson::to_document(&mongodb::bson::to_bson(&self.list).ok()?).ok()?;
 
         Some(
-            doc!["ListID": self.list_id, "ListName": self.list_name.clone(), "SerializedList": document],
+            doc!["ListID": self.list_id, "ListName": self.list_name.clone(), "GithubIssueID": self.github_issue_id, "SerializedList": document, "Deleted": self.deleted],
         )
     }
 
@@ -28,12 +29,27 @@ impl crate::state::TodoList {
             list_id = Some(list.get_i32("ListID").ok()?.into());
         }
 
+        let mut github_issue_id = list.get_i64("GithubIssueID").ok();
+        if github_issue_id.is_none() {
+            github_issue_id = list.get_i32("GithubIssueID").ok().map(|val| val.into());
+        }
+        if github_issue_id.is_none() {
+            github_issue_id = Some(TodoList::default().github_issue_id);
+        }
+
+        let mut deleted = list.get_bool("Deleted").ok();
+        if deleted.is_none() {
+            deleted = Some(TodoList::default().deleted);
+        }
+
         let list = list.get_document("SerializedList").ok()?;
 
         Some(crate::state::TodoList {
             list_id: list_id?,
             list_name: list_name.into(),
             list: serde_json::to_value(list).ok()?,
+            github_issue_id: github_issue_id?,
+            deleted: deleted?,
         })
     }
 }
@@ -46,13 +62,16 @@ pub struct Database {
 
 impl Database {
     pub fn print_info(&self) {
-        println!("Printing database names...");
+        println!("Database: Printing database names...");
         let db_names = block_on(self.client.list_database_names(None, None));
         for db_name in db_names.unwrap() {
             println!("{}", db_name);
         }
 
-        println!("Printing collection names in {}", self.database.name());
+        println!(
+            "Database: Printing collection names in {}",
+            self.database.name()
+        );
         for collection_name in block_on(self.database.list_collection_names(None)).unwrap() {
             println!("{}", collection_name);
         }
@@ -90,18 +109,58 @@ impl Database {
             "ListID": list_id
         };
 
-        collection.delete_one(filter, None).await?;
+        let update = doc! {
+            "$set": doc!{"Deleted": true}
+        };
+
+        collection.find_one_and_update(filter, update, None).await?;
 
         Ok(())
     }
 
-    pub async fn get_todo_lists(&self) -> mongodb::error::Result<Vec<Document>> {
+    pub async fn get_todo_lists(
+        &self,
+        include_deleted_lists: bool,
+    ) -> mongodb::error::Result<Vec<Document>> {
         let collection = self.database.collection::<Document>("todolists");
 
-        let todo_lists = collection.find(None, None).await?;
+        let filter = if include_deleted_lists {
+            None
+        } else {
+            Some(doc! {
+                "Deleted": doc!{ "$exists": false }
+            })
+        };
+
+        let todo_lists = collection.find(filter, None).await?;
 
         let vec = todo_lists.collect::<Vec<_>>().await;
         vec.into_iter().collect()
+    }
+
+    pub async fn get_todo_list(
+        &self,
+        list_id: &i64,
+        include_deleted_lists: bool,
+    ) -> mongodb::error::Result<Option<crate::state::TodoList>> {
+        let collection = self.database.collection::<Document>("todolists");
+
+        let filter = if include_deleted_lists {
+            Some(doc! {"ListID": list_id,})
+        } else {
+            Some(doc! {
+                "ListID": list_id,
+                "Deleted": doc!{ "$exists": false }
+            })
+        };
+
+        let list = collection.find_one(filter, None).await?;
+
+        if let Some(list) = list {
+            return Ok(state::TodoList::from_bson(&list));
+        }
+
+        Ok(None)
     }
 
     pub async fn get_todo_list_github_id(
@@ -117,15 +176,9 @@ impl Database {
         let list = collection.find_one(filter, None).await?;
 
         if let Some(list) = list {
-            let github_id = list
-                .get_document("SerializedList")
-                .map_err(|e| mongodb::error::Error::custom(e.to_string()))?
-                .get_document("GithubIssueID")
-                .map_err(|e| mongodb::error::Error::custom(e.to_string()))?
-                .get_i64("__Value")
-                .map_err(|e| mongodb::error::Error::custom(e.to_string()))?;
-
-            return Ok(Some(github_id));
+            if let Some(list) = state::TodoList::from_bson(&list) {
+                return Ok(Some(list.github_issue_id));
+            }
         }
 
         Ok(None)
@@ -154,10 +207,10 @@ async fn handle_event(event: crate::state::ServerEvent) -> Option<()> {
                 .await;
 
             match res.clone() {
-                Ok(_) => println!("Updated todo list in database"),
+                Ok(_) => println!("Database: Updated todo list in database"),
                 Err(e) => {
-                    eprintln!("Failed to update todolist in database!");
-                    eprintln!("Error: {}", e.to_string());
+                    eprintln!("Database: Failed to update todolist in database!");
+                    eprintln!("Database: Error: {}", e.to_string());
                 }
             }
 
@@ -170,10 +223,10 @@ async fn handle_event(event: crate::state::ServerEvent) -> Option<()> {
                 .await;
 
             match res.clone() {
-                Ok(_) => println!("Deleted todo list in database: {}", id),
+                Ok(_) => println!("Database: Deleted todo list in database: {}", id),
                 Err(e) => {
-                    eprintln!("Failed to delete todolist in database!");
-                    eprintln!("Error: {}", e.to_string());
+                    eprintln!("Database: Failed to delete todolist in database!");
+                    eprintln!("Database: Error: {}", e.to_string());
                 }
             }
 

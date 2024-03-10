@@ -5,6 +5,7 @@ address = "0.0.0.0"
 port = 9092
 
 [github]
+enabled = true
 app_id = 852598
 app_key_file = "config/keys/unreal-todo-list-app.2024-03-08.private-key.pem"
 app_name = "Unreal Todo List App"

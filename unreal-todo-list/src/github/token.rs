@@ -38,7 +38,7 @@ pub fn create_token(config: &crate::config::GithubConfig) -> Option<String> {
         Ok(key) => key,
         Err(e) => {
             eprintln!(
-                "Failed to read key file \"{}\" for github bot!",
+                "Github: Failed to read key file \"{}\" for github bot!",
                 config.app_key_file
             );
             eprintln!("Error: {}", e.to_string());
@@ -49,8 +49,8 @@ pub fn create_token(config: &crate::config::GithubConfig) -> Option<String> {
     let encoded_key = match EncodingKey::from_rsa_pem(&key) {
         Ok(key) => key,
         Err(e) => {
-            eprintln!("Failed to encode key for github bot!");
-            eprintln!("Error: {}", e.to_string());
+            eprintln!("Github: Failed to encode key for github bot!");
+            eprintln!("Github: Error: {}", e.to_string());
             std::process::exit(-1);
         }
     };
@@ -79,7 +79,7 @@ pub async fn request_access_token() -> Option<AccessToken> {
 
     let access_token_request = super::send_github_request_with_token(
         format!("/app/installations/{}/access_tokens", installation_id),
-        Some(http::method::Method::POST),
+        Some(reqwest::Method::POST),
         create_token(&github_config)?,
     )
     .await?;
@@ -107,7 +107,7 @@ pub fn should_refresh_access_token() -> Option<bool> {
 }
 
 pub async fn refresh_access_token() -> Option<()> {
-    println!("Refreshing access token");
+    println!("Github: Refreshing access token");
     let access_token = request_access_token().await?;
 
     crate::state::get_server_state()

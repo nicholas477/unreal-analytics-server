@@ -4,23 +4,31 @@ pub mod token;
 use mongodb::bson::{doc, Document};
 use rocket::serde::json::{Json, Value};
 use rocket::{http::Status, post};
-use serde::{Deserialize, Serialize};
 
 use rocket::routes;
-use serde_json::json;
 
 use self::token::refresh_access_token;
 
 impl crate::state::TodoList {
     pub async fn get_github_id(&self) -> Option<i64> {
-        if let Some(list_id) = crate::state::get_server_state()
+        if self.github_issue_id > -1 {
+            return Some(self.github_issue_id);
+        }
+
+        let res = crate::state::get_server_state()
             .db
             .get_todo_list_github_id(&self.list_id)
-            .await
-            .ok()?
-        {
-            if list_id >= 0 {
-                return Some(list_id);
+            .await;
+
+        match res {
+            Ok(maybe_list_id) => {
+                if maybe_list_id? >= 0 {
+                    return maybe_list_id;
+                }
+            }
+            Err(e) => {
+                eprintln!("Github: Failed to read github id from database!");
+                eprintln!("Github: Error: {}", e.to_string());
             }
         }
 
@@ -28,6 +36,8 @@ impl crate::state::TodoList {
     }
 
     pub fn set_github_id(&mut self, id: i64) -> Option<()> {
+        self.github_issue_id = id;
+
         self.list
             .get_mut("GithubIssueID")?
             .as_object_mut()?
@@ -59,10 +69,10 @@ pub fn get_github_repo() -> Option<crate::config::GithubConfig> {
 ///
 pub async fn send_github_request_with_token(
     endpoint: String,
-    method: Option<http::method::Method>, // Defaults to GET
+    method: Option<reqwest::Method>, // Defaults to GET
     token: String,
 ) -> Option<serde_json::Value> {
-    let method = method.unwrap_or(http::method::Method::GET);
+    let method = method.unwrap_or(reqwest::Method::GET);
     let url = format!("https://api.github.com{}", endpoint);
     let user_agent = crate::state::get_server_state()
         .config
@@ -88,7 +98,7 @@ pub async fn send_github_request_with_token(
 
 pub async fn send_github_request(
     endpoint: String,
-    method: Option<http::method::Method>, // Defaults to GET
+    method: Option<reqwest::Method>, // Defaults to GET
     body: Option<String>,
 ) -> Option<serde_json::Value> {
     if token::should_refresh_access_token()? {
@@ -102,7 +112,7 @@ pub async fn send_github_request(
         .access_token
         .clone();
 
-    let method = method.unwrap_or(http::method::Method::GET);
+    let method = method.unwrap_or(reqwest::Method::GET);
     let url = format!("https://api.github.com{}", endpoint);
     let user_agent = crate::state::get_server_state()
         .config
@@ -146,12 +156,13 @@ pub fn get_db_list_github_id(list: &Document) -> Option<i64> {
 pub async fn create_issues() -> Option<()> {
     let lists = crate::state::get_server_state()
         .db
-        .get_todo_lists()
+        .get_todo_lists(true)
         .await
         .ok()?;
 
     for list in lists {
         let todolist = crate::state::TodoList::from_bson(&list)?;
+
         issue::update_or_create_issue(&todolist).await?;
     }
 
@@ -159,10 +170,20 @@ pub async fn create_issues() -> Option<()> {
 }
 
 pub async fn initialize() -> Option<()> {
-    token::refresh_access_token().await?;
-    println!("Got Github access token");
+    if crate::state::get_server_state()
+        .read_config()?
+        .github
+        .enabled
+        == false
+    {
+        println!("Github: integration DISABLED");
+        return Some(());
+    }
 
-    println!("Creating github issues...");
+    token::refresh_access_token().await?;
+    println!("Github: Got Github access token");
+
+    println!("Github: Creating/updating github issues...");
     create_issues().await.unwrap();
 
     Some(())
@@ -176,19 +197,19 @@ async fn handle_event(event: crate::state::ServerEvent) -> Option<()> {
             issue::update_or_create_issue(&list).await?;
             Some(())
         }
-        ServerEvent::TodoListDelete { id } => {
-            // send_github_request(
-            //     format!(
-            //         "/repos/{}/issues/{}",
-            //         super::get_github_repo()?.repo,
-            //         list_github_id
-            //     ),
-            //     Some(http::method::Method::POST),
-            //     Some(json!({})),
-            // )
-            // .await?;
 
-            None
+        // For deletion, query the list from the database and set the issue to closed
+        ServerEvent::TodoListDelete { id } => {
+            let mut list = crate::state::get_server_state()
+                .db
+                .get_todo_list(&id, true)
+                .await
+                .ok()??;
+
+            list.deleted = true;
+
+            issue::update_or_create_issue(&list).await?;
+            Some(())
         }
     };
 }
@@ -200,6 +221,17 @@ pub fn hook(data: Json<Value>) -> Result<Json<String>, Status> {
 }
 
 pub async fn start() -> tokio::task::JoinHandle<()> {
+    if crate::state::get_server_state()
+        .read_config()
+        .unwrap()
+        .github
+        .enabled
+        == false
+    {
+        println!("Github: integration DISABLED");
+        return tokio::spawn(async move {});
+    }
+
     let server_handle = tokio::spawn(async move {
         let _rocket = rocket::build().mount("/", routes![hook]).launch().await;
     });

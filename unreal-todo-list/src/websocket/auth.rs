@@ -40,7 +40,7 @@ fn get_connection_info(req: &Request) -> String {
 pub fn authorize(
     req: &Request,
     response: Response,
-) -> Result<http::Response<()>, http::Response<Option<String>>> {
+) -> Result<tungstenite::http::Response<()>, tungstenite::http::Response<Option<String>>> {
     let mk_err = || {
         Response::builder()
             .status(tokio_tungstenite::tungstenite::http::StatusCode::UNAUTHORIZED)
@@ -56,12 +56,12 @@ pub fn authorize(
         .todolist_auth_key;
     if auth == auth_key {
         println!(
-            "Authorized socket connection for: {}",
+            "Websocket: Authorized socket connection for: {}",
             get_connection_info(req)
         );
         Ok(response)
     } else {
-        println!("Unauthorized socket connection, dropping!");
+        println!("Websocket: Unauthorized socket connection, dropping!");
         Err(mk_err())
     }
 }

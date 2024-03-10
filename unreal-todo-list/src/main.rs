@@ -32,8 +32,24 @@ async fn initialize() {
     github::initialize().await.unwrap();
 }
 
+// Causes panics to kill the entire program instead of just a single thread
+fn bind_panic() {
+    use std::panic;
+    use std::process;
+
+    // take_hook() returns the default hook in case when a custom one is not set
+    let orig_hook = panic::take_hook();
+    panic::set_hook(Box::new(move |panic_info| {
+        // invoke the default handler and exit the process
+        orig_hook(panic_info);
+        process::exit(1);
+    }));
+}
+
 #[tokio::main]
 async fn main() -> Result<(), IoError> {
+    bind_panic();
+
     initialize().await;
 
     let websocket_handle = websocket::start().await;

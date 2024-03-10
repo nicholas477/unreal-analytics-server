@@ -4,6 +4,7 @@ use std::process::exit;
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct GithubConfig {
+    pub enabled: bool,
     pub app_id: u64,
     pub app_key_file: String,
     pub app_name: Option<String>,
