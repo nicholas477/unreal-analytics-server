@@ -7,10 +7,10 @@ use serde_json::json;
 pub struct GithubIssue {
     title: String,
     body: String,
+    state: String, // opened or closed
 }
 
-//fn get_task_linked_assets()
-
+// Converts a single task into a display string on a github issue
 fn task_to_string(task: &Value) -> String {
     let task_checked = (|| {
         let task_status = task
@@ -74,7 +74,14 @@ impl crate::state::TodoList {
         GithubIssue {
             title: self.list_name.clone(),
             body: tasks_vec.join("\n"),
+            state: "open".into(),
         }
+    }
+
+    pub fn to_closed_github_issue(&self) -> GithubIssue {
+        let mut issue = self.to_github_issue();
+        issue.state = "closed".into();
+        return issue;
     }
 }
 
@@ -83,7 +90,7 @@ impl crate::state::TodoList {
 // Returns the todo list with the new github id
 pub async fn create_issue(list: &crate::state::TodoList) -> Option<crate::state::TodoList> {
     // Don't create a list if this one already has an ID
-    if let Some(_list_id) = list.get_github_id() {
+    if let Some(_list_id) = list.get_github_id().await {
         println!("Issue already exists");
         return None;
     }
@@ -113,7 +120,7 @@ pub async fn create_issue(list: &crate::state::TodoList) -> Option<crate::state:
 
 pub async fn update_or_create_issue(list: &crate::state::TodoList) -> Option<i64> {
     // Don't create a list if this one already has an ID
-    if let Some(list_github_id) = list.get_github_id() {
+    if let Some(list_github_id) = list.get_github_id().await {
         let issue = list.to_github_issue();
 
         let update_issue_res = super::send_github_request(
@@ -132,6 +139,6 @@ pub async fn update_or_create_issue(list: &crate::state::TodoList) -> Option<i64
         update_issue_res.get("number")?.as_i64()
     } else {
         let new_list = create_issue(list).await?;
-        return new_list.get_github_id();
+        return new_list.get_github_id().await;
     }
 }

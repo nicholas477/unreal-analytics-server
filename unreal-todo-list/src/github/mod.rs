@@ -7,23 +7,24 @@ use rocket::{http::Status, post};
 use serde::{Deserialize, Serialize};
 
 use rocket::routes;
+use serde_json::json;
 
 use self::token::refresh_access_token;
 
 impl crate::state::TodoList {
-    pub fn get_github_id(&self) -> Option<i64> {
-        let list_id = self
-            .list
-            .get("GithubIssueID")?
-            .as_object()?
-            .get("__Value")?
-            .as_i64()?;
-
-        if list_id >= 0 {
-            return Some(list_id);
-        } else {
-            return None;
+    pub async fn get_github_id(&self) -> Option<i64> {
+        if let Some(list_id) = crate::state::get_server_state()
+            .db
+            .get_todo_list_github_id(&self.list_id)
+            .await
+            .ok()?
+        {
+            if list_id >= 0 {
+                return Some(list_id);
+            }
         }
+
+        return None;
     }
 
     pub fn set_github_id(&mut self, id: i64) -> Option<()> {
@@ -175,7 +176,20 @@ async fn handle_event(event: crate::state::ServerEvent) -> Option<()> {
             issue::update_or_create_issue(&list).await?;
             Some(())
         }
-        ServerEvent::TodoListDelete { id } => None,
+        ServerEvent::TodoListDelete { id } => {
+            // send_github_request(
+            //     format!(
+            //         "/repos/{}/issues/{}",
+            //         super::get_github_repo()?.repo,
+            //         list_github_id
+            //     ),
+            //     Some(http::method::Method::POST),
+            //     Some(json!({})),
+            // )
+            // .await?;
+
+            None
+        }
     };
 }
 

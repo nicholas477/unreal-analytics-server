@@ -103,6 +103,33 @@ impl Database {
         let vec = todo_lists.collect::<Vec<_>>().await;
         vec.into_iter().collect()
     }
+
+    pub async fn get_todo_list_github_id(
+        &self,
+        list_id: &i64,
+    ) -> mongodb::error::Result<Option<i64>> {
+        let collection = self.database.collection::<Document>("todolists");
+
+        let filter = doc! {
+            "ListID": list_id
+        };
+
+        let list = collection.find_one(filter, None).await?;
+
+        if let Some(list) = list {
+            let github_id = list
+                .get_document("SerializedList")
+                .map_err(|e| mongodb::error::Error::custom(e.to_string()))?
+                .get_document("GithubIssueID")
+                .map_err(|e| mongodb::error::Error::custom(e.to_string()))?
+                .get_i64("__Value")
+                .map_err(|e| mongodb::error::Error::custom(e.to_string()))?;
+
+            return Ok(Some(github_id));
+        }
+
+        Ok(None)
+    }
 }
 
 pub fn connect_to_db(config: &config::Config) -> Database {
