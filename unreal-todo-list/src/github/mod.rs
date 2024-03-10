@@ -10,6 +10,32 @@ use rocket::routes;
 
 use self::token::refresh_access_token;
 
+impl crate::state::TodoList {
+    pub fn get_github_id(&self) -> Option<i64> {
+        let list_id = self
+            .list
+            .get("GithubIssueID")?
+            .as_object()?
+            .get("__Value")?
+            .as_i64()?;
+
+        if list_id >= 0 {
+            return Some(list_id);
+        } else {
+            return None;
+        }
+    }
+
+    pub fn set_github_id(&mut self, id: i64) -> Option<()> {
+        self.list
+            .get_mut("GithubIssueID")?
+            .as_object_mut()?
+            .insert("__Value".into(), id.into());
+
+        Some(())
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct GithubState {
     pub access_token: token::AccessToken,
@@ -116,23 +142,6 @@ pub fn get_db_list_github_id(list: &Document) -> Option<i64> {
     }
 }
 
-pub fn get_list_github_id(list: &crate::state::TodoList) -> Option<i64> {
-    let list_id = list
-        .list
-        .get("SerializedList")?
-        .as_object()?
-        .get("GithubIssueID")?
-        .as_object()?
-        .get("__Value")?
-        .as_i64()?;
-
-    if list_id >= 0 {
-        return Some(list_id);
-    } else {
-        return None;
-    }
-}
-
 pub async fn create_issues() -> Option<()> {
     let lists = crate::state::get_server_state()
         .db
@@ -140,23 +149,9 @@ pub async fn create_issues() -> Option<()> {
         .await
         .ok()?;
 
-    for mut list in lists {
+    for list in lists {
         let todolist = crate::state::TodoList::from_bson(&list)?;
-        if let Some(new_issue_id) = issue::create_issue(&todolist).await {
-            // Insert the new value into the old list
-            list.get_document_mut("SerializedList")
-                .ok()?
-                .get_document_mut("GithubIssueID")
-                .ok()?
-                .insert("__Value", new_issue_id)?;
-
-            // Update with the new ID
-            crate::state::get_server_state()
-                .db
-                .update_todo_list(&list)
-                .await
-                .ok()?;
-        }
+        issue::update_or_create_issue(&todolist).await?;
     }
 
     Some(())
@@ -167,7 +162,7 @@ pub async fn initialize() -> Option<()> {
     println!("Got Github access token");
 
     println!("Creating github issues...");
-    create_issues().await;
+    create_issues().await.unwrap();
 
     Some(())
 }
@@ -177,8 +172,8 @@ async fn handle_event(event: crate::state::ServerEvent) -> Option<()> {
     use crate::state::ServerEvent;
     return match event {
         ServerEvent::TodoListUpdate { list } => {
-            //if ()
-            None
+            issue::update_or_create_issue(&list).await?;
+            Some(())
         }
         ServerEvent::TodoListDelete { id } => None,
     };

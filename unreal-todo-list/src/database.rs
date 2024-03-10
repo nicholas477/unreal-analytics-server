@@ -22,11 +22,16 @@ impl crate::state::TodoList {
 
     pub fn from_bson(list: &Document) -> Option<Self> {
         let list_name = list.get_str("ListName").ok()?;
-        let list_id = list.get_i64("ListID").ok()?;
+
+        let mut list_id = list.get_i64("ListID").ok();
+        if list_id.is_none() {
+            list_id = Some(list.get_i32("ListID").ok()?.into());
+        }
+
         let list = list.get_document("SerializedList").ok()?;
 
         Some(crate::state::TodoList {
-            list_id: list_id,
+            list_id: list_id?,
             list_name: list_name.into(),
             list: serde_json::to_value(list).ok()?,
         })
@@ -53,23 +58,18 @@ impl Database {
         }
     }
 
-    pub async fn update_todo_list(&self, list: &Document) -> mongodb::error::Result<()> {
+    pub async fn update_todo_list(
+        &self,
+        list: &crate::state::TodoList,
+    ) -> mongodb::error::Result<()> {
         let collection = self.database.collection::<Document>("todolists");
 
-        let list_id = list
-            .get_i64("ListID")
-            .or(Err(mongodb::error::Error::custom("JSON Error")))?;
-
-        // let list_name = list
-        //     .get_str("ListName")
-        //     .or(Err(mongodb::error::Error::custom("JSON Error")))?;
-
         let filter = doc! {
-            "ListID": list_id
+            "ListID": list.list_id
         };
 
         let update = doc! {
-            "$set": list
+            "$set": list.to_bson()
         };
 
         let options = FindOneAndUpdateOptions::builder()
@@ -121,25 +121,20 @@ async fn handle_event(event: crate::state::ServerEvent) -> Option<()> {
     use crate::state::ServerEvent;
     return match event {
         ServerEvent::TodoListUpdate { list } => {
-            if let Some(document) = list.to_bson() {
-                let res = crate::state::get_server_state()
-                    .db
-                    .update_todo_list(&document)
-                    .await;
+            let res = crate::state::get_server_state()
+                .db
+                .update_todo_list(&list)
+                .await;
 
-                match res.clone() {
-                    Ok(_) => println!("Updated todo list in database"),
-                    Err(e) => {
-                        eprintln!("Failed to update todolist in database!");
-                        eprintln!("Error: {}", e.to_string());
-                    }
+            match res.clone() {
+                Ok(_) => println!("Updated todo list in database"),
+                Err(e) => {
+                    eprintln!("Failed to update todolist in database!");
+                    eprintln!("Error: {}", e.to_string());
                 }
-
-                res.ok()
-            } else {
-                eprintln!("Database event listener failed to convert message to json!!!!");
-                None
             }
+
+            res.ok()
         }
         ServerEvent::TodoListDelete { id } => {
             let res = crate::state::get_server_state()
