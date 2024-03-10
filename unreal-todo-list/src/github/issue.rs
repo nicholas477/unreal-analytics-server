@@ -9,6 +9,8 @@ pub struct GithubIssue {
     body: String,
 }
 
+//fn get_task_linked_assets()
+
 fn task_to_string(task: &Value) -> String {
     let task_checked = (|| {
         let task_status = task
@@ -32,12 +34,29 @@ fn task_to_string(task: &Value) -> String {
     })()
     .unwrap_or("".into());
 
+    let task_description = (|| {
+        let description = task
+            .get("TaskDescription")?
+            .as_object()?
+            .get("__Value")?
+            .as_object()?
+            .get("SourceString")?
+            .as_str()?;
+
+        Some(description)
+    })();
+
     let mut task_string = String::new();
 
     task_string += "- [";
     task_string += if task_checked { "x" } else { " " };
     task_string += "] ";
     task_string += task_title;
+
+    if let Some(description_str) = task_description {
+        task_string += "\n\t";
+        task_string += description_str.replace("\n", "\n\t").as_str();
+    }
 
     task_string
 }
