@@ -158,12 +158,13 @@ pub async fn create_issues() -> Option<()> {
         .db
         .get_todo_lists(true)
         .await
-        .ok()?;
+        .ok()
+        .unwrap();
 
     for list in lists {
-        let todolist = crate::state::TodoList::from_bson(&list)?;
+        let todolist = crate::state::TodoList::from_bson(&list).unwrap();
 
-        issue::update_or_create_issue(&todolist).await?;
+        issue::update_or_create_issue(&todolist).await.unwrap();
     }
 
     Some(())

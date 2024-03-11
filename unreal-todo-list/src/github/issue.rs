@@ -94,13 +94,14 @@ pub async fn create_issue(list: &crate::state::TodoList) -> Option<crate::state:
     let new_issue = list.to_github_issue();
 
     let new_issue_res = super::send_github_request(
-        format!("/repos/{}/issues", super::get_github_repo()?.repo),
+        format!("/repos/{}/issues", super::get_github_repo().unwrap().repo),
         Some(reqwest::Method::POST),
-        Some(serde_json::to_string(&new_issue).ok()?),
+        Some(serde_json::to_string(&new_issue).ok().unwrap()),
     )
-    .await?;
+    .await
+    .unwrap();
 
-    let new_issue_id = new_issue_res.get("number")?.as_i64()?;
+    let new_issue_id = new_issue_res.get("number").unwrap().as_i64().unwrap();
 
     let mut new_list = list.clone();
     new_list.set_github_id(new_issue_id);
@@ -130,14 +131,14 @@ pub async fn update_or_create_issue(list: &crate::state::TodoList) -> Option<i64
     if let Some(list_github_id) = list.get_github_id().await {
         let issue = list.to_github_issue();
 
-        let update_issue_res = super::send_github_request(
+        let _update_issue_res = super::send_github_request(
             format!(
                 "/repos/{}/issues/{}",
                 super::get_github_repo()?.repo,
                 list_github_id
             ),
             Some(reqwest::Method::POST),
-            Some(serde_json::to_string(&issue).ok()?),
+            Some(serde_json::to_string(&issue).ok().unwrap()),
         )
         .await?;
 
@@ -146,9 +147,9 @@ pub async fn update_or_create_issue(list: &crate::state::TodoList) -> Option<i64
             list.list_name, list_github_id
         );
 
-        update_issue_res.get("number")?.as_i64()
+        Some(list_github_id)
     } else {
-        let new_list = create_issue(list).await?;
+        let new_list = create_issue(list).await.unwrap();
 
         println!("update_or_create_issue: returning github id");
         return new_list.get_github_id().await;
