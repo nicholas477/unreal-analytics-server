@@ -150,7 +150,7 @@ impl Database {
         } else {
             Some(doc! {
                 "ListID": list_id,
-                "Deleted": doc!{ "$exists": false }
+                "Deleted": doc!{ "$in": [null, false] }
             })
         };
 
