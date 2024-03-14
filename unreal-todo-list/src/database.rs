@@ -128,7 +128,7 @@ impl Database {
             None
         } else {
             Some(doc! {
-                "Deleted": doc!{ "$exists": false }
+                "Deleted": doc!{ "$in": [null, false] }
             })
         };
 
